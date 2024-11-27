@@ -56,9 +56,13 @@ sectors_intensity = sectors_intensity.reset_index()
 dense_intensity = dense_format(sectors_intensity, "Intensity")
 
 #%% Sample sector and companies
-def select_sectors(df, sector):
+def select_sectors(df, sector, outliers = None):
     new_df = df.copy()
     new_df = new_df[new_df["GICS Sector Name"] == sector]
+    if outliers is not None:
+        for outlier in outliers:
+            new_df = new_df[new_df["Instrument"] != outlier]
+
     mean_row = new_df[new_df.columns[2:]].mean(axis = 0)
     mean_row['Instrument'] = 'Mean'
     mean_row['GICS Sector Name'] = 'Consumer Staples'
@@ -78,7 +82,8 @@ def rate_or_int(df, rate = True):
 
 df_cs = select_sectors(indicators, "Consumer Staples")
 df_en = select_sectors(indicators, "Energy")
-df_fi = select_sectors(indicators, "Financials")
+df_fi = select_sectors(indicators, "Financials", outliers = ["MWDP.PA"])
+
 
 rate_cs = rate_or_int(df_cs, True)
 int_cs = rate_or_int(df_cs, False)
@@ -168,11 +173,11 @@ def count_sectors(save):
         plt.savefig("Figs/sectors.png")
         
 #%% 
-history_plot(rate_cs, "Rate", is_sector = False, title = "Consumer staples companies carbon rate evolution", save = True, filename = "ratecs")
-history_plot(int_cs, "Intensity", is_sector = False, title = "Consumer staples companies carbon intensity evolution", save = True, filename = "intcs")
+#history_plot(rate_cs, "Rate", is_sector = False, title = "Consumer staples companies carbon rate evolution", save = True, filename = "ratecs")
+#history_plot(int_cs, "Intensity", is_sector = False, title = "Consumer staples companies carbon intensity evolution", save = True, filename = "intcs")
 
-history_plot(rate_en, "Rate", is_sector = False, title = "Energy companies carbon rate evolution", save = True, filename = "rateen")
-history_plot(int_en, "Intensity", is_sector = False, title = "Energy companies carbon intensity evolution", save = True, filename = "inten")
+#history_plot(rate_en, "Rate", is_sector = False, title = "Energy companies carbon rate evolution", save = True, filename = "rateen")
+#history_plot(int_en, "Intensity", is_sector = False, title = "Energy companies carbon intensity evolution", save = True, filename = "inten")
 
-history_plot(rate_fi, "Rate", is_sector = False, title = "Financial companies carbon rate evolution", save = True, filename = "ratefi")
-history_plot(int_fi, "Intensity", is_sector = False, title = "Financial companies carbon intensity evolution", save = True, filename = "intfi")
+history_plot(rate_fi, "Rate", is_sector = False, title = "Financial companies carbon rate evolution", save = True, filename = "ratefinooutlier")
+history_plot(int_fi, "Intensity", is_sector = False, title = "Financial companies carbon intensity evolution", save = True, filename = "intfinooutlier")
