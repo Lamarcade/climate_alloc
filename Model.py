@@ -26,9 +26,9 @@ from scipy.optimize import minimize
 class MC():  
     
 #%% Initialization
-    def __init__(self, T0, Time, initial_law = [0.25, 0.25, 0.25, 0.25], data_file = "Data/Stoxx_data.xlsx"):
+    def __init__(self, Time, initial_law = [0.25, 0.25, 0.25, 0.25], data_file = "Data/Stoxx_data.xlsx"):
         self.rng = np.random.default_rng()
-        self.T0 = T0
+        #self.T0 = T0
         self.Time = Time 
         self.pi = initial_law
         self.probas = self.pi
@@ -38,20 +38,31 @@ class MC():
         
         # Carbon and revenue data per company
         df = pd.read_excel(data_file)
-        df.drop(df.columns[0], axis = 1)
+        df = df.drop(df.columns[0], axis = 1)
         self.df = df
         
         indicators = df[["Instrument","GICS Sector Name"]].copy()
         for i in range(13, -1, -1):
             # Actual year / Former year from Y-13 to Y-0
             indicators["Rate Y-{i}".format(i = i)] = 100 * df["Total Y-{i}".format(i = i)] / df["Total Y-{j}".format(j = i+1)]
-            
+        
+        indicators.replace([np.inf, -np.inf], np.nan, inplace = True)
         #for i in range(13, -1, -1):
         #    # Total emissions / Revenue 
         #    indicators["Intensity Y-{i}".format(i = i)] = df["Total Y-{i}".format(i = i)] / df["Revenue Y-{i}".format(i = i)]
         self.indicators = indicators
         
         self.mus = np.zeros((len(initial_law),Time)) # here compute the historical mu
+        
+        mu = 0
+        self.T0 = indicators.shape[1] - 2
+        
+        for t in range(2, self.T0 + 2):
+            mu += indicators.loc[:, indicators.columns[t]].mean()
+        for t in range(self.T0):
+            self.mus[:, t] = mu * np.ones(len(initial_law))
+        self.mus /= self.T0    
+    
         
     def initialize_parameters(self, central_var, beta, nus, sigmas):
         self.theta = (central_var, beta, nus, sigmas)
@@ -73,10 +84,10 @@ class MC():
         chi = self.rng.normal(loc,scale)
         return(g(previous, intensities, scenar, chi))
     
-    def toy_g(previous, intensities, scenar, chi):
+    def toy_g(self, previous, intensities, scenar, chi):
         return previous + intensities + chi
     
-    def toy_f(previous):
+    def toy_f(self, previous):
         return 1/previous
     
     #def one_density(self, intensities, previous_intensity, scenar, beta, nus, sigmas, central_var):
@@ -113,7 +124,7 @@ class MC():
         det = np.prod(theta[3]) * denom
         
         # Computing the density
-        coeff = 1/ np.srqt( (2* np.pi) **n * det) 
+        coeff = 1/ np.sqrt( (2* np.pi) **n * det) 
         
         # mu is a single value
         vector = (intensities - (self.mus[scenar, t] + theta[2]))
@@ -134,7 +145,7 @@ class MC():
             # Scenario j
             density[j] = self.one_density(theta, intensities, previous_intensity, j, t)
         self.density = density
-        return(self.density_val)
+        return(self.density)
 
 #%% Filter
     
