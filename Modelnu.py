@@ -6,11 +6,8 @@ Created on Thu Nov 21 14:43:21 2024
 """
 
 import numpy as np
-import matplotlib.pyplot as plt
 from scipy.optimize import minimize
-import seaborn as sns
 import pandas as pd
-from collections import defaultdict
 from scipy.stats import multivariate_normal
 
 # Scenar : index 1 to k
@@ -22,10 +19,10 @@ from scipy.stats import multivariate_normal
 # probas : Filter probabilities
 # full_intensities 
 
-class Model():  
+class Modelnu():  
     
 #%% Initialization
-    def __init__(self, Time, initial_law = np.array([0.25, 0.25, 0.25, 0.25])[:, np.newaxis], data_file = "Data/Stoxx_data.xlsx"):
+    def __init__(self, Time, initial_law = np.array([0.25, 0.25, 0.25, 0.25]), data_file = "Data/Stoxx_data.xlsx"):
         '''
         Initialize an instance of the model computing the filter and performing the EM algorithm
 
@@ -47,7 +44,10 @@ class Model():
         self.Time = Time 
         
         # Initial probabilities
-        self.pi = initial_law
+        
+        # Format to a column matrix for storage of probabilities
+        initial = initial_law[:, np.newaxis]
+        self.pi = initial
         
         # Probabilities updated for the filter
         self.probas = self.pi
@@ -55,7 +55,7 @@ class Model():
         # Keep track of the current time and all the probabilities
         self.history_count = 0
         self.history_marginal = np.ones(Time)
-        self.history_pi = initial_law * np.ones((len(self.pi), Time))
+        self.history_pi = initial * np.ones((len(self.pi), Time))
         
         # Carbon and revenue data per company
         df = pd.read_excel(data_file)
@@ -81,13 +81,7 @@ class Model():
         sectors = sectors.groupby(by= "GICS Sector Name").mean()
         sectors.drop("Real Estate", inplace = True)
         
-        #for i in range(13, -1, -1):
-        #    # Total emissions / Revenue 
-        #    indicators["Intensity Y-{i}".format(i = i)] = df["Total Y-{i}".format(i = i)] / df["Revenue Y-{i}".format(i = i)]
-        
-        #self.indicators = ind
         self.indicators = sectors
-        
         
         # Historical central carbon rate
         self.mus = np.zeros((len(initial_law),Time))
@@ -124,102 +118,18 @@ class Model():
         None.
 
         '''
-        self.theta = np.concatenate([np.array([central_std, beta]), nus, sigmas])
+        
+        # Do not keep the last nu to avoid a constraint
+        self.theta = np.concatenate([np.array([central_std, beta]), nus[:-1], sigmas])
         self.theta = self.theta.flatten()
         assert len(nus) == len(sigmas), "Mismatch in dimensions of nus and sigmas"
         # 0 : Central std
         # 1 : Beta
-        # 2:2+n (excluded) : Nus
-        # 2+n:2+2n : Sigmas
+        # 2:1+n (excluded) : Nus
+        # 1+n:1+2n : Sigmas
 
 
 #%% Evaluation functions    
-    def intensity(self, eps, eta, relative = True):
-        '''
-        Get a total carbon rate according to systemic and intrinsic carbon rates
-
-        Parameters
-        ----------
-        eps : Float
-            Systemic carbon rate.
-        eta : Float
-            Carbon rate spread.
-        relative : Bool, optional
-            Indicates whether we use the relative or net adjustment. The default is True.
-
-        Returns
-        -------
-        Float
-            Total carbon rate.
-
-        '''
-        if relative:
-            return eps * (1 + eta)
-        else:
-            return eps + eta
-            
-    def simulate_macro(self,previous, intensities, scenar, loc, scale, g):
-        # Evolution of macroeconomics
-        chi = self.rng.normal(loc,scale)
-        return(g(previous, intensities, scenar, chi))
-    
-    def toy_g(self, previous, intensities, scenar, chi):
-        return previous + intensities + chi
-    
-    def toy_f(self, previous):
-        return 1/previous
-    
-    #def one_density(self, intensities, previous_intensity, scenar, beta, nus, sigmas, central_var):
-        # f_t((d_i)i | Delta = j, F_{t-1})
-       # cov = central_var + beta * (previous_intensity - self.mus[scenar])**2
-        # matrix = cov * np.ones((len(sigmas), len(sigmas)))
-       # matrix += np.diag(np.array([cov]) + sigmas)
-       # mn = multivariate_normal(self.mus[scenar] + nus, matrix)
-        # return(mn.pdf(intensities))
-    
-    def one_density(self, theta, intensities, previous_intensity, scenar, t):
-        '''
-        Compute the density of given carbon rates knowing the scenario
-
-        Parameters
-        ----------
-        theta : Tuple
-            Parameters of the density.
-        intensities : Series
-            Carbon rates at year t for the companies.
-        previous_intensity : Float
-            Mean carbon rate for the previous year.
-        scenar : Int
-            Index of the known scenario.
-        t : Int
-            Current year.
-
-        Returns
-        -------
-        Float
-            The value of the density.
-
-        '''
-        # f_t((d_i)i | Delta = j, F_{t-1})
-        cov = theta[0] + theta[1] * (previous_intensity - self.mus[scenar, t])**2
-        #print(cov)
-        
-        raise Exception("Function not up to date")
-        
-        matrix = cov * np.ones((len(theta[3]), len(theta[3])))
-        matrix += np.diag(np.array([cov]) + theta[3])
-        #print(matrix)
-        
-        print("Mean MN " , self.mus[scenar, t] + theta[2])
-        print("Cov Matrix", matrix)
-        print()
-        print("Intensities", intensities)
-        #wait = input("Press Enter")
-        
-        mn = multivariate_normal(self.mus[scenar, t] + theta[2], matrix)
-        #print("Intensities", intensities)
-        print("PDF scenario {i}: ".format(i = scenar), mn.pdf(intensities))
-        return(mn.pdf(intensities))
  
     def explicit_density(self, theta, intensities, previous_intensity, scenar, t, is_log = False):
         '''
@@ -252,24 +162,25 @@ class Model():
         n = len(intensities)
         
         # cov_inverse
-        diago = np.diag( np.array([cov]) / theta[2+n:])
+        diago = np.diag( np.array([cov]) / theta[1+n:])
         #denom = (1 + np.ones(n).dot(diago).dot(np.ones(n)))
         # Simplified formula
-        denom = 1 + cov * np.sum(1/theta[2+n:])
+        denom = 1 + cov * np.sum(1/theta[1+n:])
             
         inverse = 1/ (cov) * (diago - diago.dot(np.ones((n, n))).dot(diago) / denom)
     
         # determinant
         # cov**n * det(D_{j,t}) * denom
-        det = np.prod(theta[2+n:2+2*n]) * denom
+        det = np.prod(theta[1+n:]) * denom
         
         # Computing the density
         coeff = 1/ np.sqrt( (2* np.pi) **n * det) 
         #print("denom", denom)
         #print("det", det)
         
-        # mu is a single value
-        vector = (intensities - (self.mus[scenar, t] + theta[2:2+n]))
+        # self.mus[scenar, t] =  mu is a single value
+        # Add back nu_n as the opposite of the sum of the (nu_i)i
+        vector = (intensities - (self.mus[scenar, t] + np.concatenate([mm.theta[2:1+n], [-np.sum(mm.theta[2:1+n])]])))
         #print("Vector", vector)
         #print("Inverse", inverse)
         inside = -1/2 * vector.dot(inverse).dot(vector)
@@ -312,6 +223,8 @@ class Model():
             # Scenario j
             density[j] = self.explicit_density(theta, intensities, previous_intensity, j, t, is_log)
         self.density = density
+        
+        # Put the densities as a column matrix
         return(self.density[:, np.newaxis])
 
 #%% Filter
@@ -337,6 +250,7 @@ class Model():
         print("Density val", density_val)
         print()
         num = np.multiply(self.pi, density_val)
+        
         marginal = np.ones(self.pi.shape).T.dot(num).item() # since it is a matrix
         
         #print("marginal", marginal)
@@ -435,16 +349,12 @@ class Model():
 
         '''
         n = len(full_intensities)
-        constraints = [
-            {'type': 'eq', 'fun': self.constraint_eq, 'args': (n,)},
-            #{'type': 'ineq', 'fun': self.constraint_ineq, 'args': (n,)}
-            ]
         
         epsilon = 1e-6
         bounds = [
         (0, None),                 # theta[0] > 0
         (epsilon, 1 - epsilon),    # 0 < theta[1] < 1
-    ] + [(None, None)] * n + [(epsilon, None)] * n  # Positivité pour theta[2+n : 2+2n]
+    ] + [(None, None)] * (n-1) + [(epsilon, None)] * n  # Positivité pour theta[2+n : 2+2n]
 
         def check_bounds(theta, bounds):
             for i, (value, (lower, upper)) in enumerate(zip(theta, bounds)):
@@ -459,7 +369,7 @@ class Model():
         if not check_bounds(self.theta, bounds):
             raise ValueError("Initial theta values are not in the bounds")
         
-        result = minimize(self.q1, self.theta, args = (full_intensities), constraints = constraints, 
+        result = minimize(self.q1, self.theta, args = (full_intensities), 
                           bounds = bounds, method = 'SLSQP', options={'disp': True})
         if result.success:
             self.theta = result.x
@@ -494,10 +404,11 @@ class Model():
             # M step
             self.M_step(full_intensities)
             loglk.append(self.log_lk(self.theta, full_intensities))
+            print("Q1 + Q2 =", loglk)
         return loglk
             
     
-mm = Model(14)
+mm = Modelnu(14)
 
 fi = mm.indicators
 p,q = fi.shape
