@@ -442,7 +442,7 @@ class Model():
         
         epsilon = 1e-6
         bounds = [
-        (0, None),                 # theta[0] > 0
+        (epsilon, None),                 # theta[0] > 0
         (epsilon, 1 - epsilon),    # 0 < theta[1] < 1
     ] + [(None, None)] * n + [(epsilon, None)] * n  # Positivité pour theta[2+n : 2+2n]
 

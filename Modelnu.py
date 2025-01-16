@@ -177,6 +177,7 @@ class Modelnu():
         coeff = 1/ np.sqrt( (2* np.pi) **n * det) 
         #print("denom", denom)
         #print("det", det)
+        #print("Coeff", coeff)
         
         # self.mus[scenar, t] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
@@ -184,10 +185,12 @@ class Modelnu():
         #print("Vector", vector)
         #print("Inverse", inverse)
         inside = -1/2 * vector.dot(inverse).dot(vector)
+        
         #print("Mahalanobis", inside)
         #print()
        # wait = input("Press Enter")
         if is_log:
+            print("Logcoeff", np.log(coeff))
             return(np.log(coeff) + inside)
         else:
             return(coeff * np.exp(inside))
@@ -352,7 +355,7 @@ class Modelnu():
         
         epsilon = 1e-6
         bounds = [
-        (0, None),                 # theta[0] > 0
+        (epsilon, None),                 # theta[0] > 0
         (epsilon, 1 - epsilon),    # 0 < theta[1] < 1
     ] + [(None, None)] * (n-1) + [(epsilon, None)] * n  # Positivité pour theta[2+n : 2+2n]
 
