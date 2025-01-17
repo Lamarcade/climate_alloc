@@ -419,19 +419,24 @@ class Modelnu():
         loglk = []
         for l in range(n_iter):
             # E step
+            loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
+            print("Q1 + Q2 =", loglk[l])
+            
+            # Reset time, which is updated at every filter step 
             self.history_count = 0
             for t in range(full_intensities.shape[1] - 1):
                 # Update probabilities thanks to the filter
                 self.filter_step(full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0))
             
-            # M step
+            # M step: Update theta and pi
             self.M_step(full_intensities)
-            loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
-            print("Q1 + Q2 =", loglk)
+
+        print("Final Q1+Q2 =",self.log_lk(self.theta, self.pi, full_intensities))
+        print("Q1 + Q2 history :", loglk)
         return loglk
             
     
-mm = Modelnu(14)
+mm = Modelnu(16)
 
 fi = mm.indicators
 p,q = fi.shape
@@ -439,6 +444,6 @@ p,q = fi.shape
 nn = np.ones(p)
 nn[p//2:] -= 2 * np.ones(p - p//2)
 np.sum(nn)
-mm.initialize_parameters(1, 0.5, nn, 1 * np.ones(p))
+mm.initialize_parameters(1, 0.5, nn, 0.1 * np.ones(p))
 mm.EM(mm.indicators, n_iter = 10)    
     
