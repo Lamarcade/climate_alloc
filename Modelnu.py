@@ -22,7 +22,7 @@ from scipy.stats import multivariate_normal
 class Modelnu():  
     
 #%% Initialization
-    def __init__(self, Time, initial_law = np.array([0.25, 0.25, 0.25, 0.25]), data_file = "Data/Stoxx_data.xlsx"):
+    def __init__(self, Time, initial_law = np.array([0.35, 0.15, 0.25, 0.25]), data_file = "Data/Stoxx_data.xlsx"):
         '''
         Initialize an instance of the model computing the filter and performing the EM algorithm
 
@@ -82,6 +82,7 @@ class Modelnu():
         sectors.drop("Real Estate", inplace = True)
         
         self.indicators = sectors
+        print(sectors.columns)
         
         # Historical central carbon rate
         self.mus = np.zeros((len(initial_law),Time))
@@ -89,10 +90,10 @@ class Modelnu():
         mu = 0
         
         # Duration of the historical data
-        self.T0 = self.indicators.shape[1] - 2
+        self.T0 = self.indicators.shape[1] 
         
-        for t in range(2, self.T0 + 2):
-            mu += self.indicators.loc[:, indicators.columns[t]].mean(skipna = True)
+        for t in range(self.T0):
+            mu += self.indicators.mean(axis = None, skipna = True)
         mu /= self.T0
         for t in range(self.T0):
             self.mus[:, t] = mu * np.ones(len(initial_law))   
@@ -190,7 +191,7 @@ class Modelnu():
         #print()
        # wait = input("Press Enter")
         if is_log:
-            print("Logcoeff", np.log(coeff))
+            #print("Logcoeff", np.log(coeff))
             return(np.log(coeff) + inside)
         else:
             return(coeff * np.exp(inside))
@@ -249,12 +250,13 @@ class Modelnu():
 
         '''
         # 2.12
-        density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count + 2)
+        self.probas = self.pi
+        density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
         print("Density val", density_val)
         print()
-        num = np.multiply(self.pi, density_val)
+        num = np.multiply(self.probas, density_val)
         
-        marginal = np.ones(self.pi.shape).T.dot(num).item() # since it is a matrix
+        marginal = np.ones(self.probas.shape).T.dot(num).item() # since it is a matrix
         
         #print("marginal", marginal)
         
@@ -262,6 +264,7 @@ class Modelnu():
         self.history_pi[:, self.history_count] = self.probas.flatten()
         self.history_count += 1
         self.history_marginal[self.history_count] = marginal
+
         self.probas = num/marginal
  
         
@@ -288,16 +291,16 @@ class Modelnu():
 
         '''
         q1 = 0
-        for t in range(full_intensities.shape[1] -2):
+        for t in range(full_intensities.shape[1] -1):
             # Parameters central std, betas, nus are used in the density here
             
             # At t = 0 need to use historical
-            q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+2], full_intensities.iloc[:,t+1].mean(axis = 0), t, is_log = True).T, self.pi).item()
+            q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), t, is_log = True).T, self.probas).item()
         return q1
     
-    def q2(self):
+    def q2(self, pi):
         '''
-        Computes the part of the log-likelihood depending on the conditional probabilities, which have to be computed first      
+        Computes the part of the log-likelihood depending on the initial law    
 
         Returns
         -------
@@ -305,9 +308,9 @@ class Modelnu():
             Second term of the log-likelihood.
 
         '''
-        return - np.sum(np.log(self.probas) * self.pi)
+        return - np.sum(np.log(self.probas) * pi)
     
-    def log_lk(self, theta, full_intensities):
+    def log_lk(self, theta, pi, full_intensities):
         '''
         Computes the log-likelihood to maximize in the EM
 
@@ -325,13 +328,17 @@ class Modelnu():
 
         '''
         print("Q1:", self.q1(theta, full_intensities))
-        print("Q2:", self.q2())
+        print("Q2:", self.q2(pi))
         print()
-        return(self.q1(theta, full_intensities) + self.q2())
+        return(self.q1(theta, full_intensities) + self.q2(pi))
     
     def constraint_eq(self, theta,n):
         '''Constraint: theta[n+1] == -sum(theta[2:n+1]). aka sum(nu_i) = 0'''
         return theta[n+1] + np.sum(theta[2:n+1])
+    
+    def constraint_eq_pi(self, pi):
+        '''Constraint: sum(pi) == 1'''
+        return 1-np.sum(pi)
 
     def constraint_ineq(self, theta, n):
         '''Constraint: theta[2+n : 2+2n] > 0. aka (sigma_i)i > 0'''
@@ -362,10 +369,10 @@ class Modelnu():
         def check_bounds(theta, bounds):
             for i, (value, (lower, upper)) in enumerate(zip(theta, bounds)):
                 if lower is not None and value < lower:
-                    print(f"Paramètre theta[{i}] = {value} est inférieur à la borne inférieure {lower}")
+                    print(f"theta[{i}] = {value} is lower than {lower}")
                     return False
                 if upper is not None and value > upper:
-                    print(f"Paramètre theta[{i}] = {value} est supérieur à la borne supérieure {upper}")
+                    print(f"theta[{i}] = {value} is higher than {upper}")
                     return False
             return True
         
@@ -377,9 +384,21 @@ class Modelnu():
         if result.success:
             self.theta = result.x
             print("Theta", self.theta)
-            wait = input("Press Enter")
+            #wait = input("Press Enter")
         else:
-            print("Failure optimization")
+            print("Failure optimization Q1")
+            
+        bounds_law = [(0, 1)] * self.pi.size
+        constraints_pi = [{'type': 'eq', 'fun': self.constraint_eq_pi}]    
+        # Flatten probabilities to optimize
+        result_law = minimize(self.q2, self.pi.flatten(), bounds= bounds_law, 
+                          constraints = constraints_pi, method = 'SLSQP', options={'disp': True})
+        if result_law.success:
+            self.pi = result_law.x.reshape(len(self.pi), 1)
+            print("Pi", self.pi)
+            #wait = input("Press Enter")
+        else:
+            print("Failure optimization Q2")
         
     def EM(self, full_intensities, n_iter):
         '''
@@ -401,12 +420,13 @@ class Modelnu():
         for l in range(n_iter):
             # E step
             self.history_count = 0
-            for t in range(full_intensities.shape[1] - 2):
-                self.filter_step(full_intensities.iloc[:,t+2], full_intensities.iloc[:,t+1].mean(axis = 0))
+            for t in range(full_intensities.shape[1] - 1):
+                # Update probabilities thanks to the filter
+                self.filter_step(full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0))
             
             # M step
             self.M_step(full_intensities)
-            loglk.append(self.log_lk(self.theta, full_intensities))
+            loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
             print("Q1 + Q2 =", loglk)
         return loglk
             
@@ -420,5 +440,5 @@ nn = np.ones(p)
 nn[p//2:] -= 2 * np.ones(p - p//2)
 np.sum(nn)
 mm.initialize_parameters(1, 0.5, nn, 1 * np.ones(p))
-mm.EM(mm.indicators, n_iter = 3)    
+mm.EM(mm.indicators, n_iter = 10)    
     
