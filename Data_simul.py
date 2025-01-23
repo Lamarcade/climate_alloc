@@ -73,11 +73,13 @@ df_int = df_int[
 #%%
 scenario_data = df_int.copy()
 scenario_data["Ratio"] = scenario_data.groupby(['Model', 'Scenario', 'Region', 'Variable'])['Value']\
-                 .transform(lambda x: x / x.shift(1))
+                 .transform(lambda x: x / abs(x.shift(1)))
 scenario_data.drop({"Model", "Region", "Unit", "Value", "Variable"}, axis = 1, inplace = True)
 
 
 final_df = scenario_data.pivot(index=["Scenario"], columns="Year", values="Ratio")
+
+final_df.to_excel("Data/scenarios.xlsx")
 
 #%%
 df_plot = final_df.reset_index().melt(id_vars="Scenario", var_name="Year", value_name="Ratio")

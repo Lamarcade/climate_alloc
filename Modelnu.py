@@ -67,8 +67,8 @@ class Modelnu():
             # Actual year / Former year from Y-13 to Y-0
             #indicators["Rate Y-{i}".format(i = i)] = 100 * df["Total Y-{i}".format(i = i)] / df["Total Y-{j}".format(j = i+1)]
             
-            # Keep as a percentage
-            indicators["Rate Y-{i}".format(i = i)] = df["Total Y-{i}".format(i = i)] / df["Total Y-{j}".format(j = i+1)]
+            # Keep as a percentage, with absolute percentage increase to account for negative values
+            indicators["Rate Y-{i}".format(i = i)] = df["Total Y-{i}".format(i = i)] / abs(df["Total Y-{j}".format(j = i+1)])
         
         # Reduce number of rates and drop NaN
         indicators.replace([np.inf, -np.inf], np.nan, inplace = True)
@@ -84,9 +84,10 @@ class Modelnu():
         self.indicators = sectors
         print(sectors.columns)
         
-        # Historical central carbon rate
+        # Central carbon rates
         self.mus = np.zeros((len(initial_law),Time))
         
+        # Historical central carbon rate
         mu = 0
         
         # Duration of the historical data
@@ -129,6 +130,14 @@ class Modelnu():
         # 2:1+n (excluded) : Nus
         # 1+n:1+2n : Sigmas
 
+    def rename_rates(self):
+        for i in range(0, 14):
+            self.indicators.rename(columns = {f"Rate Y-{i}": str(2023-i)}, inplace = True)
+
+    def get_scenario_data(self, path = "Data/scenarios.xlsx"):
+        rates = pd.read_excel(path)
+        
+        return
 
 #%% Evaluation functions    
  
@@ -437,7 +446,7 @@ class Modelnu():
             
     
 mm = Modelnu(16)
-
+mm.rename_rates()
 fi = mm.indicators
 p,q = fi.shape
 
