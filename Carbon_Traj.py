@@ -21,7 +21,7 @@ stoxx = pd.read_excel("Data/Stoxx_data.xlsx")
 indicators = stoxx[["Instrument", "GICS Sector Name"]].copy()
 for i in range(13, -1, -1):
     # Actual year / Former year from Y-13 to Y-0
-    indicators["Rate Y-{i}".format(i = i)] = 100 * stoxx["Total Y-{i}".format(i = i)] / stoxx["Total Y-{j}".format(j = i+1)]
+    indicators["Rate Y-{i}".format(i = i)] = stoxx["Total Y-{i}".format(i = i)] / stoxx["Total Y-{j}".format(j = i+1)]
     
 for i in range(13, -1, -1):
     # Total emissions / Revenue 

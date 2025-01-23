@@ -6,6 +6,10 @@ Created on Tue Jan 21 17:24:07 2025
 """
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+#%%
 
 sectors = ["Communication Services", "Consumer Discretionary",
            "Consumer Staples", "Energy", "Financials",
@@ -28,16 +32,17 @@ indic = "CO2"
 filtered = filtered[filtered["Variable"].str.contains(indic, case=False, na=False)]
 
 #%%
-df_long = filtered.melt(
+scenarios_means = filtered[filtered["Variable"] == "Emissions|CO2"]
+
+scenar = scenarios_means.melt(
     id_vars=["Model", "Scenario", "Region", "Variable", "Unit"],
     var_name="Year",
     value_name="Value"
 )
 
-
-df_long["Year"] = df_long["Year"].astype(int)
-df_long["Value"] = pd.to_numeric(df_long["Value"], errors="coerce")
-df_long = df_long.infer_objects()  # Avoid warning
+scenar["Year"] = scenar["Year"].astype(int)
+scenar["Value"] = pd.to_numeric(scenar["Value"], errors="coerce")
+scenar = scenar.infer_objects() # Avoid warning
 
 def interpolate_group(group):
     # Group on first 5 columns
@@ -53,19 +58,36 @@ def interpolate_group(group):
         group[col] = group_metadata[col]
     return group
 
-df_interp = (
-    df_long.groupby(["Model", "Scenario", "Region", "Variable", "Unit"], group_keys=False)
+df_int = (
+    scenar.groupby(["Model", "Scenario", "Region", "Variable", "Unit"], group_keys=False)
     .apply(interpolate_group)
 )
 
-df_interp = df_interp[
+df_int = df_int[
     ["Model", "Scenario", "Region", "Variable", "Unit", "Year", "Value"]
 ]
-
-#print(df_interp.head(20))
+#%%
 
 #%%
-scenario_data = df_interp.copy()
+scenario_data = df_int.copy()
 scenario_data["Ratio"] = scenario_data.groupby(['Model', 'Scenario', 'Region', 'Variable'])['Value']\
                  .transform(lambda x: x / x.shift(1))
-scenario_data.drop({"Model", "Region", "Unit", "Value"}, axis = 1, inplace = True)
+scenario_data.drop({"Model", "Region", "Unit", "Value", "Variable"}, axis = 1, inplace = True)
+
+
+sc = scenario_data.pivot(index=["Scenario"], columns="Year", values="Ratio")
+
+#%%
+df_plot = sc.reset_index().melt(id_vars="Scenario", var_name="Year", value_name="Ratio")
+plt.figure(figsize=(10, 6))
+sns.lineplot(data=df_plot, x="Year", y="Ratio", hue="Scenario", marker="o")
+
+plt.title("Carbonation rate for each scenario", fontsize=16)
+plt.xlabel("Year", fontsize=14)
+plt.ylabel("CR", fontsize=14)
+plt.legend(title="Scenario", fontsize=12)
+plt.grid(True)
+plt.show()
+
+#%% Simulate data for sectors
+
