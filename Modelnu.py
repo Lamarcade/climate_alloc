@@ -82,10 +82,10 @@ class Modelnu():
         sectors.drop("Real Estate", inplace = True)
         
         self.indicators = sectors
-        print(sectors.columns)
+        #print(sectors.columns)
         
         # Central carbon rates
-        self.mus = np.zeros((len(initial_law),Time))
+        self.mus = pd.DataFrame(np.zeros((len(initial_law),Time)))
         
         # Historical central carbon rate
         mu = 0
@@ -97,7 +97,7 @@ class Modelnu():
             mu += self.indicators.mean(axis = None, skipna = True)
         mu /= self.T0
         for t in range(self.T0):
-            self.mus[:, t] = mu * np.ones(len(initial_law))   
+            self.mus.iloc[:, t] = mu * np.ones(len(initial_law))   
     
         
     def initialize_parameters(self, central_std, beta, nus, sigmas):
@@ -131,12 +131,26 @@ class Modelnu():
         # 1+n:1+2n : Sigmas
 
     def rename_rates(self):
+        start_year = 2010
+        
         for i in range(0, 14):
             self.indicators.rename(columns = {f"Rate Y-{i}": str(2023-i)}, inplace = True)
+        #self.mus.columns = [str(start_year + i) for i in range(self.mus.shape[1])]
+        self.mus.columns = [start_year + i for i in range(self.mus.shape[1])]
 
     def get_scenario_data(self, path = "Data/scenarios.xlsx"):
         rates = pd.read_excel(path)
         
+        scenar_dict = {i: index for i, index in enumerate(rates["Scenario"])}
+        
+        # Begin at 2021
+        self.mus.loc[:, rates.columns[2:]] = rates 
+        return scenar_dict
+    
+    def get_simul_data(self, path = "Data/simul.xlsx"):
+        simul = pd.read_excel("Data/simul.xlsx")
+
+        simul = simul[simul.columns[2:]]
         return
 
 #%% Evaluation functions    
@@ -167,7 +181,7 @@ class Modelnu():
 
         '''
         
-        cov = theta[0] + theta[1] * (previous_intensity - self.mus[scenar, t])**2
+        cov = theta[0] + theta[1] * (previous_intensity - self.mus.iloc[scenar, t])**2
         #print("cov", cov)
         n = len(intensities)
         
@@ -189,9 +203,9 @@ class Modelnu():
         #print("det", det)
         #print("Coeff", coeff)
         
-        # self.mus[scenar, t] =  mu is a single value
+        # self.mus.iloc[scenar, t] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
-        vector = (intensities - (self.mus[scenar, t] + np.concatenate([mm.theta[2:1+n], [-np.sum(mm.theta[2:1+n])]])))
+        vector = (intensities - (self.mus.iloc[scenar, t] + np.concatenate([mm.theta[2:1+n], [-np.sum(mm.theta[2:1+n])]])))
         #print("Vector", vector)
         #print("Inverse", inverse)
         inside = -1/2 * vector.dot(inverse).dot(vector)
@@ -445,7 +459,8 @@ class Modelnu():
         return loglk
             
     
-mm = Modelnu(16)
+# Below 2, CurPo, Delayed, Fragmented, Low Dem, NDC, NZ
+mm = Modelnu(40, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]))
 mm.rename_rates()
 fi = mm.indicators
 p,q = fi.shape
@@ -455,4 +470,4 @@ nn[p//2:] -= 2 * np.ones(p - p//2)
 np.sum(nn)
 mm.initialize_parameters(1, 0.5, nn, 0.1 * np.ones(p))
 mm.EM(mm.indicators, n_iter = 10)    
-    
+dicti = mm.get_scenario_data()

@@ -124,8 +124,23 @@ def scenario_simul(data = final_df, scenar_index = 6, n_sectors = n_sectors):
         paths.loc[i] += etas[i,:]
     return paths
 
+def simul_constant(data = final_df, scenar_index = 6, n_sectors = n_sectors):
+    etas = np.random.dirichlet(np.ones(n_sectors))
+    
+    # Sum to 0 instead of 1
+    etas -= 1/ n_sectors
+    
+    # Retrieve average scenario path
+    base_data = data.loc[index2scenar[scenar_index]]
+    
+    paths = pd.DataFrame(np.ones((n_sectors, len(data.columns))), columns = data.columns)
+    for i in range(len(paths)):
+        paths.loc[i] = base_data
+        paths.loc[i] += etas[i]
+    return paths
+
 index_used = 6
-paths = scenario_simul()
+paths = simul_constant()
 
 summed, base = paths.mean(axis = 0), final_df.loc[index2scenar[index_used]]
 print((summed - base).sum())
