@@ -79,6 +79,8 @@ class Modelnu():
         sectors = indicators.copy()
         sectors.drop(sectors.columns[0], axis = 1, inplace = True)
         sectors = sectors.groupby(by= "GICS Sector Name").mean()
+        
+        # Real Estate decarbonation rates have many outliers
         sectors.drop("Real Estate", inplace = True)
         
         self.indicators = sectors
@@ -134,7 +136,7 @@ class Modelnu():
         start_year = 2010
         
         for i in range(0, 14):
-            self.indicators.rename(columns = {f"Rate Y-{i}": str(2023-i)}, inplace = True)
+            self.indicators.rename(columns = {f"Rate Y-{i}": 2023-i}, inplace = True)
         #self.mus.columns = [str(start_year + i) for i in range(self.mus.shape[1])]
         self.mus.columns = [start_year + i for i in range(self.mus.shape[1])]
 
@@ -147,11 +149,24 @@ class Modelnu():
         self.mus.loc[:, rates.columns[2:]] = rates 
         return scenar_dict
     
-    def get_simul_data(self, path = "Data/simul.xlsx"):
-        simul = pd.read_excel("Data/simul.xlsx")
+    def get_simul_data(self, path = "Data/simul.xlsx", sheet = 0):
+        simul = pd.read_excel("Data/simul.xlsx", sheet_name = sheet)
 
+        # First columns are an index and NA values
         simul = simul[simul.columns[2:]]
-        return
+        simul_sorted = simul.sort_values(by=2021, ascending=False).reset_index(drop=True)
+        
+        # The sector with the highest rate in 2021 gets the highest rate 
+        # from the simulation, and so on
+        new_year = self.indicators.columns[-1]
+        histo_means = self.indicators.mean(axis = 1)
+        histo_order = histo_means.sort_values(ascending=False).index
+        simul_sorted.index = histo_order
+        
+        # Start at future data keeping rates up to 2023
+        num_dates = simul.columns[-1] - new_year
+        for i in range(new_year +1, new_year +1 + num_dates):
+            self.indicators[i] = simul_sorted[i]
 
 #%% Evaluation functions    
  
@@ -182,6 +197,7 @@ class Modelnu():
         '''
         
         cov = theta[0] + theta[1] * (previous_intensity - self.mus.iloc[scenar, t])**2
+        
         #print("cov", cov)
         n = len(intensities)
         
@@ -203,13 +219,24 @@ class Modelnu():
         #print("det", det)
         #print("Coeff", coeff)
         
-        # self.mus.iloc[scenar, t] =  mu is a single value
+        # self.mus.iloc[scenar, t+1] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
-        vector = (intensities - (self.mus.iloc[scenar, t] + np.concatenate([mm.theta[2:1+n], [-np.sum(mm.theta[2:1+n])]])))
-        #print("Vector", vector)
-        #print("Inverse", inverse)
+        vector = (intensities - (self.mus.iloc[scenar, t+1] + np.concatenate([mm.theta[2:1+n], [-np.sum(mm.theta[2:1+n])]])))
+
         inside = -1/2 * vector.dot(inverse).dot(vector)
         
+        if t==41:
+            #print("PI", previous_intensity)
+            print("Scenar", scenar)
+            print("Mu", self.mus.iloc[scenar,t])
+            #print("coeff", coeff)
+            #print("inside", inside)
+            print("intensities", intensities)
+            print("nus", mm.theta[2:1+n])
+            print()
+            print("vector", vector)
+            #print("inside", inside)
+            wait = input("Enter")
         #print("Mahalanobis", inside)
         #print()
        # wait = input("Press Enter")
@@ -219,8 +246,8 @@ class Modelnu():
         else:
             return(coeff * np.exp(inside))
  
-# intensities = self.df.loc[:,self.history_count + 2]
-# previous_intensity = self.df.loc[:,self.history_count + 1].mean(axis = 0)
+# intensities = self.df.loc[:,self.history_count + 1]
+# previous_intensity = self.df.loc[:,self.history_count].mean(axis = 0)
 # If history count is 0 need to add historical data
  
     def full_density(self, theta, intensities, previous_intensity, t, is_log = False):
@@ -250,6 +277,15 @@ class Modelnu():
             # Scenario j
             density[j] = self.explicit_density(theta, intensities, previous_intensity, j, t, is_log)
         self.density = density
+# =============================================================================
+#         if t == 38:
+#             print("densities at time 38", density)
+#             
+#             print("intensities", intensities)
+#             print("mus", self.mus.iloc[:, t])
+#             print()
+#             wait = input("Enter")
+# =============================================================================
         
         # Put the densities as a column matrix
         return(self.density[:, np.newaxis])
@@ -273,10 +309,10 @@ class Modelnu():
 
         '''
         # 2.12
-        self.probas = self.pi
+        #self.probas = self.pi
         density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
-        print("Density val", density_val)
-        print()
+        #print("Density val", density_val)
+        #print()
         num = np.multiply(self.probas, density_val)
         
         marginal = np.ones(self.probas.shape).T.dot(num).item() # since it is a matrix
@@ -289,6 +325,8 @@ class Modelnu():
         self.history_marginal[self.history_count] = marginal
 
         self.probas = num/marginal
+        #print(self.probas)
+        #wait = input("Enter")
  
         
 #%% EM functions
@@ -331,7 +369,7 @@ class Modelnu():
             Second term of the log-likelihood.
 
         '''
-        return - np.sum(np.log(self.probas) * pi)
+        return - np.sum(self.probas * np.log(pi))
     
     def log_lk(self, theta, pi, full_intensities):
         '''
@@ -414,15 +452,21 @@ class Modelnu():
         bounds_law = [(0, 1)] * self.pi.size
         constraints_pi = [{'type': 'eq', 'fun': self.constraint_eq_pi}]    
         # Flatten probabilities to optimize
-        result_law = minimize(self.q2, self.pi.flatten(), bounds= bounds_law, 
-                          constraints = constraints_pi, method = 'SLSQP', options={'disp': True})
-        if result_law.success:
-            self.pi = result_law.x.reshape(len(self.pi), 1)
-            print("Pi", self.pi)
-            #wait = input("Press Enter")
-        else:
-            print("Failure optimization Q2")
+        print(self.probas)
         
+# =============================================================================
+#         result_law = minimize(self.q2, self.pi.flatten(), bounds= bounds_law, 
+#                           constraints = constraints_pi, method = 'SLSQP', options={'disp': True})
+#         if result_law.success:
+#             self.pi = result_law.x.reshape(len(self.pi), 1)
+#             print("Pi", self.pi)
+#             wait = input("Press Enter")
+#         else:
+#             print("Failure optimization Q2")
+# =============================================================================
+        self.pi = self.probas/sum(self.probas)
+
+      
     def EM(self, full_intensities, n_iter):
         '''
         Perform the EM algorithm to find better estimates for the density parameters
@@ -453,6 +497,7 @@ class Modelnu():
             
             # M step: Update theta and pi
             self.M_step(full_intensities)
+            self.probas = self.pi
 
         print("Final Q1+Q2 =",self.log_lk(self.theta, self.pi, full_intensities))
         print("Q1 + Q2 history :", loglk)
@@ -460,14 +505,15 @@ class Modelnu():
             
     
 # Below 2, CurPo, Delayed, Fragmented, Low Dem, NDC, NZ
-mm = Modelnu(40, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]))
+mm = Modelnu(41, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]))
 mm.rename_rates()
 fi = mm.indicators
 p,q = fi.shape
 
-nn = np.ones(p)
-nn[p//2:] -= 2 * np.ones(p - p//2)
+nn = 0.5 * np.ones(p)
+nn[p//2:] -= 1 * np.ones(p - p//2)
 np.sum(nn)
 mm.initialize_parameters(1, 0.5, nn, 0.1 * np.ones(p))
 mm.EM(mm.indicators, n_iter = 10)    
 dicti = mm.get_scenario_data()
+mm.get_simul_data(sheet = 1)

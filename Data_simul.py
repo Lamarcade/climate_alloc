@@ -139,10 +139,11 @@ def simul_constant(data = final_df, scenar_index = 6, n_sectors = n_sectors):
         paths.loc[i] += etas[i]
     return paths
 
-index_used = 6
-paths = simul_constant()
+index_used = 1
+paths = simul_constant(scenar_index = index_used)
 
 summed, base = paths.mean(axis = 0), final_df.loc[index2scenar[index_used]]
 print((summed - base).sum())
 
-paths.to_excel("Data/simul.xlsx", sheet_name = index2scenar[index_used])
+with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
+    paths.to_excel(writer, sheet_name = index2scenar[index_used])
