@@ -9,6 +9,7 @@ import numpy as np
 from scipy.optimize import minimize
 import pandas as pd
 from scipy.stats import multivariate_normal
+import sys
 
 # Scenar : index 1 to k
 # mus[scenar,t] = mu_{Delta_t},t
@@ -130,7 +131,7 @@ class Modelnu():
         # 0 : Central std
         # 1 : Beta
         # 2:1+n (excluded) : Nus
-        # 1+n:1+2n : Sigmas
+        # 1+n:1+2n : Sigmas^2
 
     def rename_rates(self):
         start_year = 2010
@@ -211,7 +212,9 @@ class Modelnu():
     
         # determinant
         # cov**n * det(D_{j,t}) * denom
+        
         det = np.prod(theta[1+n:]) * denom
+        #det = np.exp(np.sum(np.log(theta[1+n:])))
         
         # Computing the density
         coeff = 1/ np.sqrt( (2* np.pi) **n * det) 
@@ -221,7 +224,8 @@ class Modelnu():
         
         # self.mus.iloc[scenar, t+1] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
-        vector = (intensities - (self.mus.iloc[scenar, t+1] + np.concatenate([mm.theta[2:1+n], [-np.sum(mm.theta[2:1+n])]])))
+        
+        vector = (intensities - (self.mus.iloc[scenar, t+1] + np.concatenate([theta[2:1+n], [-np.sum(theta[2:1+n])]])))
 
         inside = -1/2 * vector.dot(inverse).dot(vector)
         
@@ -369,7 +373,7 @@ class Modelnu():
             Second term of the log-likelihood.
 
         '''
-        return - np.sum(self.probas * np.log(pi))
+        return - np.sum(self.probas * np.log(pi + sys.float_info.min))
     
     def log_lk(self, theta, pi, full_intensities):
         '''
@@ -421,7 +425,7 @@ class Modelnu():
         '''
         n = len(full_intensities)
         
-        epsilon = 1e-6
+        epsilon = 1e-12
         bounds = [
         (epsilon, None),                 # theta[0] > 0
         (epsilon, 1 - epsilon),    # 0 < theta[1] < 1
@@ -437,8 +441,8 @@ class Modelnu():
                     return False
             return True
         
-        if not check_bounds(self.theta, bounds):
-            raise ValueError("Initial theta values are not in the bounds")
+#        if not check_bounds(self.theta, bounds):
+#            raise ValueError("Initial theta values are not in the bounds")
         
         result = minimize(self.q1, self.theta, args = (full_intensities), 
                           bounds = bounds, method = 'SLSQP', options={'disp': True})
@@ -483,11 +487,12 @@ class Modelnu():
         None.
 
         '''
-        loglk = []
+        expected_loglk = []
+        loglk = [self.hist_log_lk()]
         for l in range(n_iter):
             # E step
-            loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
-            print("Q1 + Q2 =", loglk[l])
+            expected_loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
+            print("Q1 + Q2 =", expected_loglk[l])
             
             # Reset time, which is updated at every filter step 
             self.history_count = 0
@@ -498,10 +503,11 @@ class Modelnu():
             # M step: Update theta and pi
             self.M_step(full_intensities)
             self.probas = self.pi
+            loglk.append(self.hist_log_lk())
 
         print("Final Q1+Q2 =",self.log_lk(self.theta, self.pi, full_intensities))
-        print("Q1 + Q2 history :", loglk)
-        return loglk
+        print("Q1 + Q2 history :", expected_loglk)
+        return expected_loglk, loglk
             
     
 # Below 2, CurPo, Delayed, Fragmented, Low Dem, NDC, NZ
@@ -510,10 +516,14 @@ mm.rename_rates()
 fi = mm.indicators
 p,q = fi.shape
 
-nn = 0.5 * np.ones(p)
-nn[p//2:] -= 1 * np.ones(p - p//2)
+nn = 0.05 * np.ones(p)
+nn[p//2:] -= 0.05 * np.ones(p - p//2)
 np.sum(nn)
-mm.initialize_parameters(1, 0.5, nn, 0.1 * np.ones(p))
-mm.EM(mm.indicators, n_iter = 10)    
+#nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
+
+mm.initialize_parameters(0.0001, 0.5, nn, 0.1 * np.ones(p))
+mm.EM(mm.indicators, n_iter = 5)    
 dicti = mm.get_scenario_data()
 mm.get_simul_data(sheet = 1)
+
+elk, lk = mm.EM(mm.indicators, n_iter = 5)   
