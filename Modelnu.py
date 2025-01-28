@@ -425,7 +425,7 @@ class Modelnu():
         '''
         n = len(full_intensities)
         
-        epsilon = 1e-12
+        epsilon = 1e-9
         bounds = [
         (epsilon, None),                 # theta[0] > 0
         (epsilon, 1 - epsilon),    # 0 < theta[1] < 1
@@ -444,10 +444,15 @@ class Modelnu():
 #        if not check_bounds(self.theta, bounds):
 #            raise ValueError("Initial theta values are not in the bounds")
         
+        value = self.q1(self.theta, full_intensities)
+
         result = minimize(self.q1, self.theta, args = (full_intensities), 
                           bounds = bounds, method = 'SLSQP', options={'disp': True})
-        if result.success:
+        tol = 1e-6
+        if result.fun < (value - tol):
             self.theta = result.x
+            if not result.success:
+                print("Warning : Optimization did not converge")
             print("Theta", self.theta)
             #wait = input("Press Enter")
         else:
