@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Nov 21 14:43:21 2024
+Created on Mon Jan 27 16:25:08 2025
 
 @author: LoïcMARCADET
 """
@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 import pandas as pd
 from scipy.stats import multivariate_normal
 import sys
+import numdifftools as nd
 
 # Scenar : index 1 to k
 # mus[scenar,t] = mu_{Delta_t},t
@@ -124,14 +125,13 @@ class Modelnu():
 
         '''
         
-        # Do not keep the last nu to avoid a constraint
-        self.theta = np.concatenate([np.array([central_std, beta]), nus[:-1], sigmas])
+        self.theta = np.concatenate([np.array([central_std, beta]), nus, sigmas])
         self.theta = self.theta.flatten()
         assert len(nus) == len(sigmas), "Mismatch in dimensions of nus and sigmas"
         # 0 : Central std
         # 1 : Beta
-        # 2:1+n (excluded) : Nus
-        # 1+n:1+2n : Sigmas^2
+        # 2:2+n (excluded) : Nus
+        # 2+n:2+2n : Sigmas
 
     def rename_rates(self):
         start_year = 2010
@@ -151,13 +151,13 @@ class Modelnu():
         return scenar_dict
     
     def get_simul_data(self, path = "Data/simul.xlsx", sheet = 0):
-        simul = pd.read_excel(path, sheet_name = sheet)
+        simul = pd.read_excel("Data/simul.xlsx", sheet_name = sheet)
 
         # First columns are an index and NA values
         simul = simul[simul.columns[2:]]
         simul_sorted = simul.sort_values(by=2021, ascending=False).reset_index(drop=True)
         
-        # The sector with the highest historical rate gets the highest rate 
+        # The sector with the highest rate in 2021 gets the highest rate 
         # from the simulation, and so on
         new_year = self.indicators.columns[-1]
         histo_means = self.indicators.mean(axis = 1)
@@ -203,18 +203,16 @@ class Modelnu():
         n = len(intensities)
         
         # cov_inverse
-        diago = np.diag( np.array([cov]) / theta[1+n:])
+        diago = np.diag( np.array([cov]) / theta[2+n:])
         #denom = (1 + np.ones(n).dot(diago).dot(np.ones(n)))
         # Simplified formula
-        denom = 1 + cov * np.sum(1/theta[1+n:])
+        denom = 1 + cov * np.sum(1/theta[2+n:])
             
         inverse = 1/ (cov) * (diago - diago.dot(np.ones((n, n))).dot(diago) / denom)
     
         # determinant
         # cov**n * det(D_{j,t}) * denom
-        
-        det = np.prod(theta[1+n:]) * denom
-        #det = np.exp(np.sum(np.log(theta[1+n:])))
+        det = np.prod(theta[2+n:]) * denom
         
         # Computing the density
         coeff = 1/ np.sqrt( (2* np.pi) **n * det) 
@@ -224,8 +222,7 @@ class Modelnu():
         
         # self.mus.iloc[scenar, t+1] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
-        
-        vector = (intensities - (self.mus.iloc[scenar, t+1] + np.concatenate([theta[2:1+n], [-np.sum(theta[2:1+n])]])))
+        vector = (intensities - (self.mus.iloc[scenar, t+1] + theta[2:2+n]))
 
         inside = -1/2 * vector.dot(inverse).dot(vector)
         
@@ -236,7 +233,7 @@ class Modelnu():
             #print("coeff", coeff)
             #print("inside", inside)
             print("intensities", intensities)
-            print("nus", mm.theta[2:1+n])
+            print("nus", mm.theta[2:2+n])
             print()
             print("vector", vector)
             #print("inside", inside)
@@ -425,11 +422,34 @@ class Modelnu():
         '''
         n = len(full_intensities)
         
-        epsilon = 1e-9
+        epsilon = 1e-6
         bounds = [
         (epsilon, None),                 # theta[0] > 0
         (epsilon, 1 - epsilon),    # 0 < theta[1] < 1
-    ] + [(None, None)] * (n-1) + [(epsilon, None)] * n  # Positivité pour theta[2+n : 2+2n]
+    ] + [(None, None)] * (n) + [(epsilon, None)] * n  # Positivité pour theta[2+n : 2+2n]
+        
+        constraints = [
+            {'type': 'eq', 'fun': self.constraint_eq, 'args': (n,)},
+            #{'type': 'ineq', 'fun': self.constraint_ineq, 'args': (n,)}
+            ]
+
+# =============================================================================
+#         fun = lambda x: self.q1(x, full_intensities)
+#         grad_func = nd.Gradient(fun, step=1e-6, order = 6)
+#         nn = 0.2 * np.ones(p)
+#         nn[p//2:] -= 0.4 * np.ones(p - p//2)
+#         
+#         mm = 100 * np.ones(p)
+#         mm[p//2:] -= 200 * np.ones(p - p//2)
+#         te = np.concatenate([np.array([1., 0.5]), nn, 0.1*np.ones(len(nn))])
+#         te2 = np.concatenate([np.array([1., 0.5]), mm, 0.1*np.ones(len(nn))])
+#         
+#         #print("Func", fun(te))
+#         #print("Func 2", fun(te2))
+#         print("Func theta", fun(self.theta))
+#         print("GRAD", grad_func(self.theta))
+#         wait = input("enter")
+# =============================================================================
 
         def check_bounds(theta, bounds):
             for i, (value, (lower, upper)) in enumerate(zip(theta, bounds)):
@@ -441,18 +461,13 @@ class Modelnu():
                     return False
             return True
         
-#        if not check_bounds(self.theta, bounds):
-#            raise ValueError("Initial theta values are not in the bounds")
+        if not check_bounds(self.theta, bounds):
+            raise ValueError("Initial theta values are not in the bounds")
         
-        value = self.q1(self.theta, full_intensities)
-
         result = minimize(self.q1, self.theta, args = (full_intensities), 
                           bounds = bounds, method = 'SLSQP', options={'disp': True})
-        tol = 1e-6
-        if result.fun < (value - tol):
+        if result.success:
             self.theta = result.x
-            if not result.success:
-                print("Warning : Optimization did not converge")
             print("Theta", self.theta)
             #wait = input("Press Enter")
         else:
@@ -521,14 +536,12 @@ mm.rename_rates()
 fi = mm.indicators
 p,q = fi.shape
 
-nn = 0.05 * np.ones(p)
-nn[p//2:] -= 0.05 * np.ones(p - p//2)
+nn = 0.2 * np.ones(p)
+nn[p//2:] -= 0.4 * np.ones(p - p//2)
 np.sum(nn)
-#nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
-
-mm.initialize_parameters(0.0001, 0.5, nn, 0.1 * np.ones(p))
+mm.initialize_parameters(1, 0.5, nn, 0.1 * np.ones(p))
 mm.EM(mm.indicators, n_iter = 5)    
 dicti = mm.get_scenario_data()
-mm.get_simul_data(sheet = 0)
+mm.get_simul_data(sheet = 1)
 
 elk, lk = mm.EM(mm.indicators, n_iter = 5)   
