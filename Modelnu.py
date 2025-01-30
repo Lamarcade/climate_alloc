@@ -229,21 +229,6 @@ class Modelnu():
 
         inside = -1/2 * vector.dot(inverse).dot(vector)
         
-        if t==41:
-            #print("PI", previous_intensity)
-            print("Scenar", scenar)
-            print("Mu", self.mus.iloc[scenar,t])
-            #print("coeff", coeff)
-            #print("inside", inside)
-            print("intensities", intensities)
-            print("nus", mm.theta[2:1+n])
-            print()
-            print("vector", vector)
-            #print("inside", inside)
-            wait = input("Enter")
-        #print("Mahalanobis", inside)
-        #print()
-       # wait = input("Press Enter")
         if is_log:
             #print("Logcoeff", np.log(coeff))
             return(np.log(coeff) + inside)
@@ -523,7 +508,7 @@ p,q = fi.shape
 
 nn = 0.05 * np.ones(p)
 nn[p//2:] -= 0.05 * np.ones(p - p//2)
-np.sum(nn)
+
 #nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
 
 mm.initialize_parameters(0.0001, 0.5, nn, 0.1 * np.ones(p))

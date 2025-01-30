@@ -9,6 +9,7 @@ import numpy as np, numpy.random
 import matplotlib.pyplot as plt
 import seaborn as sns
 import random as rd
+from scipy.stats import multivariate_normal, norm
 
 
 #%%
@@ -125,10 +126,10 @@ def scenario_simul(data = final_df, scenar_index = 6, n_sectors = n_sectors):
     return paths
 
 def simul_constant(data = final_df, scenar_index = 6, n_sectors = n_sectors):
-    etas = np.random.dirichlet(np.ones(n_sectors))
+    nus = np.random.dirichlet(np.ones(n_sectors))
     
     # Sum to 0 instead of 1
-    etas -= 1/ n_sectors
+    nus -= 1/ n_sectors
     
     # Retrieve average scenario path
     base_data = data.loc[index2scenar[scenar_index]]
@@ -136,7 +137,7 @@ def simul_constant(data = final_df, scenar_index = 6, n_sectors = n_sectors):
     paths = pd.DataFrame(np.ones((n_sectors, len(data.columns))), columns = data.columns)
     for i in range(len(paths)):
         paths.loc[i] = base_data
-        paths.loc[i] += etas[i]
+        paths.loc[i] += nus[i]
     return paths
 
 index_used = 1
@@ -147,3 +148,33 @@ print((summed - base).sum())
 
 with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
     paths.to_excel(writer, sheet_name = index2scenar[index_used])
+    
+#%%
+
+central_std = 0.001
+beta = 0.0001
+nus = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
+sigmas = 0.1 * np.ones(len(nus))
+
+def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, mus = final_df):
+    n = len(sigmas)
+    matrix = central_std * np.ones((n,n))
+    matrix += np.diag(np.diag(sigmas))
+    mu_old = mus.loc[index2scenar(index_used), 2023]
+    di = multivariate_normal(mean = nus + mu_old, cov = matrix)
+    
+    dis = pd.DataFrame({2023: di})
+    for col in mus.columns[2024:]:
+        mu_new = mus.loc[index2scenar(index_used), col]
+        dt = di.mean()
+        
+        matrix = (central_std + beta * (dt - mu_old)**2) * np.ones((n,n))
+        matrix += np.diag(np.diag(sigmas))
+        di = multivariate_normal(mean = nus + mu_new, cov = matrix)
+        
+        dis[col] = di
+        mu_old = mu_new
+        
+    return(dis)
+     
+dis = simul_parameters(central_std, beta, nus, sigmas)
