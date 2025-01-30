@@ -80,7 +80,7 @@ scenario_data.drop({"Model", "Region", "Unit", "Value", "Variable"}, axis = 1, i
 
 final_df = scenario_data.pivot(index=["Scenario"], columns="Year", values="Ratio")
 
-final_df.to_excel("Data/scenarios.xlsx")
+#final_df.to_excel("Data/scenarios.xlsx")
 
 #%%
 df_plot = final_df.reset_index().melt(id_vars="Scenario", var_name="Year", value_name="Ratio")
@@ -146,31 +146,31 @@ paths = simul_constant(scenar_index = index_used)
 summed, base = paths.mean(axis = 0), final_df.loc[index2scenar[index_used]]
 print((summed - base).sum())
 
-with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
-    paths.to_excel(writer, sheet_name = index2scenar[index_used])
+#with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
+#    paths.to_excel(writer, sheet_name = index2scenar[index_used])
     
 #%%
 
-central_std = 0.001
+central_std = 0.01
 beta = 0.0001
-nus = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
-sigmas = 0.1 * np.ones(len(nus))
+nus = np.array([0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05])
+sigmas = 0.001 * np.ones(len(nus))
 
 def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, mus = final_df):
     n = len(sigmas)
     matrix = central_std * np.ones((n,n))
-    matrix += np.diag(np.diag(sigmas))
-    mu_old = mus.loc[index2scenar(index_used), 2023]
-    di = multivariate_normal(mean = nus + mu_old, cov = matrix)
+    matrix += np.diag(sigmas)
+    mu_old = mus.loc[index2scenar[index_used], 2023]
+    di = multivariate_normal(mean = nus + mu_old, cov = matrix).rvs()
     
     dis = pd.DataFrame({2023: di})
-    for col in mus.columns[2024:]:
-        mu_new = mus.loc[index2scenar(index_used), col]
-        dt = di.mean()
+    for col in mus.columns.values[5:]:
+        mu_new = mus.loc[index2scenar[index_used], col]
+        dt = np.mean(di)
         
         matrix = (central_std + beta * (dt - mu_old)**2) * np.ones((n,n))
-        matrix += np.diag(np.diag(sigmas))
-        di = multivariate_normal(mean = nus + mu_new, cov = matrix)
+        matrix += np.diag(sigmas)
+        di = multivariate_normal(mean = nus + mu_new, cov = matrix).rvs()
         
         dis[col] = di
         mu_old = mu_new
