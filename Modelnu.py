@@ -10,6 +10,7 @@ from scipy.optimize import minimize
 import pandas as pd
 from scipy.stats import multivariate_normal
 import sys
+import matplotlib.pyplot as plt
 
 # Scenar : index 1 to k
 # mus[scenar,t] = mu_{Delta_t},t
@@ -23,7 +24,7 @@ import sys
 class Modelnu():  
     
 #%% Initialization
-    def __init__(self, Time, initial_law = np.array([0.35, 0.15, 0.25, 0.25]), data_file = "Data/Stoxx_data.xlsx"):
+    def __init__(self, Time, initial_law = np.array([0.35, 0.15, 0.25, 0.25]), data_file = "Data/Stoxx_data.xlsx", history = True):
         '''
         Initialize an instance of the model computing the filter and performing the EM algorithm
 
@@ -168,6 +169,29 @@ class Modelnu():
         num_dates = simul.columns[-1] - new_year
         for i in range(new_year +1, new_year +1 + num_dates):
             self.indicators[i] = simul_sorted[i]
+            
+    def get_future_data_only(self, path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", sheet = 0):
+        simul = pd.read_excel(path, sheet_name = sheet)
+        
+        start_year = 2023
+        simul_sorted = simul.sort_values(by=start_year, ascending=False).reset_index(drop=True)
+        
+        self.get_scenario_data(scenar_path)
+        #self.mus.columns = [start_year + i for i in range(self.mus.shape[1])]
+        
+        self.mus = self.mus.loc[:,start_year:]
+        
+        # The sector with the highest historical rate gets the highest rate 
+        # from the simulation, and so on
+        histo_means = self.indicators.mean(axis = 1)
+        histo_order = histo_means.sort_values(ascending=False).index
+        simul_sorted.index = histo_order
+        self.indicators.drop(self.indicators.columns, axis = 1, inplace = True)
+        
+        # Start at future data 
+        for col in simul_sorted.columns[1:]:
+            self.indicators[col] = simul_sorted[col]
+        
 
 #%% Evaluation functions    
  
@@ -281,7 +305,7 @@ class Modelnu():
 
 #%% Filter
     
-    def filter_step(self, intensities, previous_intensity):
+    def filter_step(self, intensities, previous_intensity, get_probas = False):
         '''
         Perform a step of the Hamilton filter to evaluate the new conditional probabilities
 
@@ -314,6 +338,9 @@ class Modelnu():
         self.history_marginal[self.history_count] = marginal
 
         self.probas = num/marginal
+        #print(self.probas)
+        if get_probas:
+            return self.probas
         #print(self.probas)
         #wait = input("Enter")
  
@@ -498,22 +525,3 @@ class Modelnu():
         print("Final Q1+Q2 =",self.log_lk(self.theta, self.pi, full_intensities))
         print("Q1 + Q2 history :", expected_loglk)
         return expected_loglk, loglk
-            
-    
-# Below 2, CurPo, Delayed, Fragmented, Low Dem, NDC, NZ
-mm = Modelnu(41, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]))
-mm.rename_rates()
-fi = mm.indicators
-p,q = fi.shape
-
-nn = 0.05 * np.ones(p)
-nn[p//2:] -= 0.05 * np.ones(p - p//2)
-
-#nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
-
-mm.initialize_parameters(0.0001, 0.5, nn, 0.1 * np.ones(p))
-mm.EM(mm.indicators, n_iter = 5)    
-dicti = mm.get_scenario_data()
-mm.get_simul_data(sheet = 0)
-
-elk, lk = mm.EM(mm.indicators, n_iter = 5)   

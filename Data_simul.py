@@ -11,6 +11,8 @@ import seaborn as sns
 import random as rd
 from scipy.stats import multivariate_normal, norm
 
+import Config
+
 
 #%%
 
@@ -151,21 +153,26 @@ print((summed - base).sum())
     
 #%%
 
-central_std = 0.01
-beta = 0.0001
-nus = np.array([0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05])
-sigmas = 0.001 * np.ones(len(nus))
+central_std = Config.CENTRAL_STD
+beta = Config.BETA
+nus = Config.NUS
+sigmas = Config.SIGMAS
 
-def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, mus = final_df):
+def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, scenar_name = None, mus = final_df):
     n = len(sigmas)
     matrix = central_std * np.ones((n,n))
     matrix += np.diag(sigmas)
-    mu_old = mus.loc[index2scenar[index_used], 2023]
+    if scenar_name is not None:
+        locmu = scenar_name
+    else:
+        locmu = index2scenar[index_used]
+    
+    mu_old = mus.loc[locmu, 2023]
     di = multivariate_normal(mean = nus + mu_old, cov = matrix).rvs()
     
     dis = pd.DataFrame({2023: di})
     for col in mus.columns.values[5:]:
-        mu_new = mus.loc[index2scenar[index_used], col]
+        mu_new = mus.loc[locmu, col]
         dt = np.mean(di)
         
         matrix = (central_std + beta * (dt - mu_old)**2) * np.ones((n,n))
@@ -176,5 +183,27 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
         mu_old = mu_new
         
     return(dis)
-     
+   
+    
 dis = simul_parameters(central_std, beta, nus, sigmas)
+
+#with pd.ExcelWriter('Data/fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#    dis.to_excel(params_writer, sheet_name = index2scenar[index_used])
+    
+#%% Simulate fake scenarios
+
+three_scenar = ["Current Policies", "Fragmented World", "Net Zero 2050"]
+fake_mus = final_df.loc[three_scenar]
+fake_mus.loc["Current Policies", 2021:2050] = Config.MUS_CURPO
+fake_mus.loc["Fragmented World", 2021:2050] = Config.MUS_FW
+fake_mus.loc["Net Zero 2050", 2021:2050] = Config.MUS_NZ
+
+with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
+    fake_mus.to_excel(fake_writer)
+    
+#scenar_used = "Net Zero 2050"
+for scenar_used in three_scenar:
+    fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
+    
+    with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+        fake_dis.to_excel(params_writer, sheet_name = scenar_used)
