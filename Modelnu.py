@@ -171,10 +171,12 @@ class Modelnu():
             self.indicators[i] = simul_sorted[i]
             
     def get_future_data_only(self, path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", sheet = 0):
+        
+        
         simul = pd.read_excel(path, sheet_name = sheet)
         
         start_year = 2023
-        simul_sorted = simul.sort_values(by=start_year, ascending=False).reset_index(drop=True)
+        simul_sorted = simul.sort_values(by=start_year, ascending=False)
         
         self.get_scenario_data(scenar_path)
         #self.mus.columns = [start_year + i for i in range(self.mus.shape[1])]
@@ -184,13 +186,17 @@ class Modelnu():
         # The sector with the highest historical rate gets the highest rate 
         # from the simulation, and so on
         histo_means = self.indicators.mean(axis = 1)
+
         histo_order = histo_means.sort_values(ascending=False).index
+        self.index_mapping = dict(zip(simul_sorted.index, histo_order))
+
+        # Reindex
         simul_sorted.index = histo_order
-        self.indicators.drop(self.indicators.columns, axis = 1, inplace = True)
+
+        # Get rid of old columns
+        self.indicators = self.indicators.iloc[:, :0] 
         
-        # Start at future data 
-        for col in simul_sorted.columns[1:]:
-            self.indicators[col] = simul_sorted[col]
+        self.indicators = pd.concat([self.indicators, simul_sorted.loc[:, simul_sorted.columns[1:]]], axis=1)
         
 
 #%% Evaluation functions    

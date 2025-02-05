@@ -22,68 +22,71 @@ sectors = ["Communication Services", "Consumer Discretionary",
            "Information Technology", "Materials",
            "Utilities"] 
 
-#data = pd.DataFrame({"Sector": sectors})
-data = pd.DataFrame(100, index=sectors, columns=[f"Y-{i}" for i in range(10, -1, -1)])
-
-folder = "Data/NGFS5/"
-file = "IAM_data.xlsx"
-
-ngfs = pd.read_excel(folder + file)
-
-# Approximation EU-15, lacks Norway, Switzerland and Poland for CAC40
-filtered = ngfs[ngfs["Region"] == "GCAM 6.0 NGFS|EU-15"]
-
-indic = "CO2"
-filtered = filtered[filtered["Variable"].str.contains(indic, case=False, na=False)]
-
-#%%
-scenarios_means = filtered[filtered["Variable"] == "Emissions|CO2"]
-
-scenar = scenarios_means.melt(
-    id_vars=["Model", "Scenario", "Region", "Variable", "Unit"],
-    var_name="Year",
-    value_name="Value"
-)
-
-scenar["Year"] = scenar["Year"].astype(int)
-scenar["Value"] = pd.to_numeric(scenar["Value"], errors="coerce")
-scenar = scenar.infer_objects() # Avoid warning
-
-def interpolate_group(group):
-    # Group on first 5 columns
-    group_metadata = group.iloc[0, :5] 
+def scenario_means():
+    #data = pd.DataFrame({"Sector": sectors})
+    data = pd.DataFrame(100, index=sectors, columns=[f"Y-{i}" for i in range(10, -1, -1)])
     
-    # Interpolate based on the grouped data
-    group = group.set_index("Year").reindex(range(2020, 2051))
-    group["Value"] = group["Value"].interpolate(method="linear")
-    group.reset_index(inplace=True)
+    folder = "Data/NGFS5/"
+    file = "IAM_data.xlsx"
     
-    # Put back the grouping columns
-    for col in group_metadata.index:
-        group[col] = group_metadata[col]
-    return group
+    ngfs = pd.read_excel(folder + file)
+    
+    # Approximation EU-15, lacks Norway, Switzerland and Poland for CAC40
+    filtered = ngfs[ngfs["Region"] == "GCAM 6.0 NGFS|EU-15"]
+    
+    indic = "CO2"
+    filtered = filtered[filtered["Variable"].str.contains(indic, case=False, na=False)]
+    
+    #%%
+    scenarios_means = filtered[filtered["Variable"] == "Emissions|CO2"]
+    
+    scenar = scenarios_means.melt(
+        id_vars=["Model", "Scenario", "Region", "Variable", "Unit"],
+        var_name="Year",
+        value_name="Value"
+    )
+    
+    scenar["Year"] = scenar["Year"].astype(int)
+    scenar["Value"] = pd.to_numeric(scenar["Value"], errors="coerce")
+    scenar = scenar.infer_objects() # Avoid warning
+    
+    def interpolate_group(group):
+        # Group on first 5 columns
+        group_metadata = group.iloc[0, :5] 
+        
+        # Interpolate based on the grouped data
+        group = group.set_index("Year").reindex(range(2020, 2051))
+        group["Value"] = group["Value"].interpolate(method="linear")
+        group.reset_index(inplace=True)
+        
+        # Put back the grouping columns
+        for col in group_metadata.index:
+            group[col] = group_metadata[col]
+        return group
+    
+    df_int = (
+        scenar.groupby(["Model", "Scenario", "Region", "Variable", "Unit"], group_keys=False)
+        .apply(interpolate_group)
+    )
+    
+    df_int = df_int[
+        ["Model", "Scenario", "Region", "Variable", "Unit", "Year", "Value"]
+    ]
+    #%%
+    
+    #%%
+    scenario_data = df_int.copy()
+    scenario_data["Ratio"] = scenario_data.groupby(['Model', 'Scenario', 'Region', 'Variable'])['Value']\
+                     .transform(lambda x: x / abs(x.shift(1)))
+    scenario_data.drop({"Model", "Region", "Unit", "Value", "Variable"}, axis = 1, inplace = True)
+    
+    
+    final_df = scenario_data.pivot(index=["Scenario"], columns="Year", values="Ratio")
+    
+    #final_df.to_excel("Data/scenarios.xlsx")
 
-df_int = (
-    scenar.groupby(["Model", "Scenario", "Region", "Variable", "Unit"], group_keys=False)
-    .apply(interpolate_group)
-)
-
-df_int = df_int[
-    ["Model", "Scenario", "Region", "Variable", "Unit", "Year", "Value"]
-]
 #%%
-
-#%%
-scenario_data = df_int.copy()
-scenario_data["Ratio"] = scenario_data.groupby(['Model', 'Scenario', 'Region', 'Variable'])['Value']\
-                 .transform(lambda x: x / abs(x.shift(1)))
-scenario_data.drop({"Model", "Region", "Unit", "Value", "Variable"}, axis = 1, inplace = True)
-
-
-final_df = scenario_data.pivot(index=["Scenario"], columns="Year", values="Ratio")
-
-#final_df.to_excel("Data/scenarios.xlsx")
-
+final_df = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
 #%%
 df_plot = final_df.reset_index().melt(id_vars="Scenario", var_name="Year", value_name="Ratio")
 plt.figure(figsize=(10, 6))
@@ -171,7 +174,9 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
     di = multivariate_normal(mean = nus + mu_old, cov = matrix).rvs()
     
     dis = pd.DataFrame({2023: di})
-    for col in mus.columns.values[5:]:
+    
+    new_dis = {}
+    for col in mus.columns[mus.columns > 2023].values:
         mu_new = mus.loc[locmu, col]
         dt = np.mean(di)
         
@@ -179,11 +184,13 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
         matrix += np.diag(sigmas)
         di = multivariate_normal(mean = nus + mu_new, cov = matrix).rvs()
         
-        dis[col] = di
+        new_dis[col] = di
+        
         mu_old = mu_new
+    new_dis_df = pd.DataFrame(new_dis)
+    dis = pd.concat([dis, new_dis_df], axis=1)
         
     return(dis)
-   
     
 dis = simul_parameters(central_std, beta, nus, sigmas)
 
@@ -193,17 +200,27 @@ dis = simul_parameters(central_std, beta, nus, sigmas)
 #%% Simulate fake scenarios
 
 three_scenar = ["Current Policies", "Fragmented World", "Net Zero 2050"]
-fake_mus = final_df.loc[three_scenar]
-fake_mus.loc["Current Policies", 2021:2050] = Config.MUS_CURPO
-fake_mus.loc["Fragmented World", 2021:2050] = Config.MUS_FW
-fake_mus.loc["Net Zero 2050", 2021:2050] = Config.MUS_NZ
+fake_mus = final_df.loc[three_scenar].copy()
 
-with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
-    fake_mus.to_excel(fake_writer)
+end = 2021 + len(Config.MUS_NZ)
+
+new_columns = pd.DataFrame(0.0, index=fake_mus.index, columns=range(2051, end))
+
+fake_mus = pd.concat([fake_mus, new_columns], axis=1)
+
     
-#scenar_used = "Net Zero 2050"
-for scenar_used in three_scenar:
-    fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
-    
-    with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-        fake_dis.to_excel(params_writer, sheet_name = scenar_used)
+fake_mus.loc["Current Policies", 2021:] = Config.MUS_CURPO
+fake_mus.loc["Fragmented World", 2021:] = Config.MUS_FW
+fake_mus.loc["Net Zero 2050", 2021:] = Config.MUS_NZ
+
+# =============================================================================
+# with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
+#     fake_mus.to_excel(fake_writer)
+#     
+# #scenar_used = "Net Zero 2050"
+# for scenar_used in three_scenar:
+#     fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
+#     
+#     with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#         fake_dis.to_excel(params_writer, sheet_name = scenar_used)
+# =============================================================================
