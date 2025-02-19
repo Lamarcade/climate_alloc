@@ -179,5 +179,20 @@ def count_sectors(save):
 #history_plot(rate_en, "Rate", is_sector = False, title = "Energy companies carbon rate evolution", save = True, filename = "rateen")
 #history_plot(int_en, "Intensity", is_sector = False, title = "Energy companies carbon intensity evolution", save = True, filename = "inten")
 
-history_plot(rate_fi, "Rate", is_sector = False, title = "Financial companies carbon rate evolution", save = True, filename = "ratefinooutlier")
-history_plot(int_fi, "Intensity", is_sector = False, title = "Financial companies carbon intensity evolution", save = True, filename = "intfinooutlier")
+#history_plot(rate_fi, "Rate", is_sector = False, title = "Financial companies carbon rate evolution", save = True, filename = "ratefinooutlier")
+#history_plot(int_fi, "Intensity", is_sector = False, title = "Financial companies carbon intensity evolution", save = True, filename = "intfinooutlier")
+
+#%% 
+sec = sectors_rate.copy()
+sec = sec[sec["GICS Sector Name"] != "Real Estate"]
+muss = sec[sec.columns[1:]].mean(axis = 1)
+mu = muss.mean()
+
+scenar = pd.read_excel("Data/scenarios.xlsx")
+
+
+plt.plot(range(2011,2021), muss, label = "Mus historiques")
+plt.plot(range(2011,2021), mu*np.ones(len(muss)), label = "Mu unique historique")
+#plt.plot(range(2021,2030), scenar[scenar["Scenario"] == "Net Zero"])
+plt.plot(range(2021,2031), scenar.loc[6, 2021:2030], label = "Net Zero")
+plt.legend()
