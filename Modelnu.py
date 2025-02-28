@@ -142,13 +142,13 @@ class Modelnu():
         #self.mus.columns = [str(start_year + i) for i in range(self.mus.shape[1])]
         self.mus.columns = [start_year + i for i in range(self.mus.shape[1])]
 
-    def get_scenario_data(self, path = "Data/scenarios.xlsx"):
+    def get_scenario_data(self, path = "Data/scenarios.xlsx", date_max = 2051):
         rates = pd.read_excel(path)
         
         scenar_dict = {i: index for i, index in enumerate(rates["Scenario"])}
         
         # Begin at 2021
-        self.mus.loc[:, rates.columns[2:]] = rates 
+        self.mus.loc[:, rates.columns[2:date_max]] = rates 
         return scenar_dict
     
     def get_simul_data(self, path = "Data/simul.xlsx", sheet = 0):
@@ -491,7 +491,7 @@ class Modelnu():
 #         else:
 #             print("Failure optimization Q2")
 # =============================================================================
-        self.pi = self.probas/sum(self.probas)
+        self.pi = self.probas
 
       
     def EM(self, full_intensities, n_iter):
