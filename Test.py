@@ -46,7 +46,8 @@ def full_process(initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
     return mm, elk, lk, dicti
 
 
-#%%
+#%% Compare only up to 2024
+
 def comparison(initial_law = np.ones(7)/7):
     mm = Modelnu(14, initial_law = initial_law)
     mm.rename_rates()
@@ -79,7 +80,7 @@ def comparison(initial_law = np.ones(7)/7):
 
 #%%  
 
-def calibrate_future_data(len_simul = 27, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
+def calibrate_future_data(len_simul = 28, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
                           future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx", 
                           sheet = 0, n_iter = 5):
     simul = Modelnu(len_simul, initial_law = initial_law)
@@ -106,6 +107,23 @@ beta = Config.BETA
 nus = Config.NUS
 sigmas = Config.SIGMAS
 
+#%% 
+def no_calibration(len_simul = 28, initial_law = np.ones(7)/7, 
+                   future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx",
+                   sheet = 0):
+    simul = Modelnu(len_simul, initial_law = initial_law)
+    simul.get_future_data_only(future_path, 
+                                    scenar_path = "Data/scenarios.xlsx", 
+                                    sheet = sheet)
+    fi = simul.indicators
+    p,q = fi.shape
+    
+    simul.initialize_parameters(central_std, beta, nus, sigmas)
+    simul.history_count = 0
+    for t in range(fi.shape[1] - 1):
+        probas = simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True)
+
+    return probas, simul
 
 #%%
 def plot_params(model, theoretical):
@@ -145,6 +163,69 @@ def verify_filter():
         full_probas.iloc[:, t] = np.array(probas).reshape(-1)  
     return fake_simul, full_probas
 
+#%% Assess probabilities with no calibration
+
+def all_probas():
+    no_calib = pd.DataFrame()
+    future = pd.ExcelFile("Data/fixed_params.xlsx")
+    
+    params_scenars = future.sheet_names
+    
+    for sheet in params_scenars:
+        probas, simul = no_calibration(sheet = sheet)
+        no_calib[sheet] = probas.flatten()
+        
+    # Scenario names
+    no_calib.index = [Config.INDEX2SCENAR[i] for i in no_calib.index]
+    return(no_calib)
+
+#%% Randomly initialize different models and keep the best one
+
+def best_model_future_data(len_simul = 28, initial_law = np.ones(7)/7, 
+                          future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
+                          sheet = 0, n_iter = 3, n_models = 5):
+    
+    best_lk = 0
+    for i in range(n_models):
+        simul = Modelnu(len_simul, initial_law = initial_law)
+        simul.get_future_data_only(future_path, 
+                                        scenar_path = "Data/scenarios.xlsx", 
+                                        sheet = sheet)
+        fi = simul.indicators
+        p,q = fi.shape
+        central_std = np.random.rand()
+        beta = np.random.rand()
+        
+        nus = np.random.dirichlet(np.ones(p))
+    
+        nus -= 1/ p
+        sigmas = np.random.rand(p)
+        
+        simul.initialize_parameters(central_std, beta, nus, sigmas)
+        elk, lk = simul.EM(simul.indicators, n_iter = n_iter) 
+        
+        if lk[-1] > best_lk:
+            best_lk = lk[-1]
+            best_model = simul
+            
+    return best_model, elk, lk
+
+def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7, 
+                          future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
+                          n_iter = 3, n_models = 5):
+    calib = pd.DataFrame()
+    future = pd.ExcelFile("Data/fixed_params.xlsx")
+    
+    params_scenars = future.sheet_names
+    
+    for sheet in params_scenars:
+        model, elk, lk = best_model_future_data(len_simul, initial_law, future_path, scenar_path, sheet = sheet, n_iter = n_iter, n_models = n_models)
+        calib[sheet] = model.probas.flatten()
+        
+    # Scenario names
+    calib.index = [Config.INDEX2SCENAR[i] for i in calib.index]
+    return(calib)
+
 #%% Tests
 
 # =============================================================================
@@ -170,4 +251,19 @@ def verify_filter():
 # params_df = pd.DataFrame(theoretical_params, index = params_index)
 # =============================================================================
 
-mm, elk, lk, dicti = comparison()
+#mm, elk, lk, dicti = comparison()
+
+#probas, mm = no_calibration()
+
+#%%
+no_calib = all_probas()
+
+#no_calib.to_excel("Data/probas_comparison.xlsx", sheet_name = "No calibration")
+
+with pd.ExcelWriter('Data/probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
+    no_calib.to_excel(writer, sheet_name = "No calibration")
+
+#calib = all_probas_calibration()
+
+#with pd.ExcelWriter('Data/probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer: 
+#    calib.to_excel(writer, sheet_name = "Calibration")

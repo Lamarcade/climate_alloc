@@ -332,6 +332,10 @@ class Modelnu():
         density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
         #print("Density val", density_val)
         #print()
+        #print(intensities)
+        #print(previous_intensity)
+        #print()
+        #wait = input("Enter")
         num = np.multiply(self.probas, density_val)
         
         marginal = np.ones(self.probas.shape).T.dot(num).item() # since it is a matrix

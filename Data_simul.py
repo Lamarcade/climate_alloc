@@ -155,6 +155,8 @@ print((summed - base).sum())
 #    paths.to_excel(writer, sheet_name = index2scenar[index_used])
     
 #%%
+three_scenar = ["Current Policies", "Fragmented World", "Net Zero 2050"]
+#%%
 
 central_std = Config.CENTRAL_STD
 beta = Config.BETA
@@ -191,15 +193,16 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
     dis = pd.concat([dis, new_dis_df], axis=1)
         
     return(dis)
-    
-dis = simul_parameters(central_std, beta, nus, sigmas)
 
-#with pd.ExcelWriter('Data/fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-#    dis.to_excel(params_writer, sheet_name = index2scenar[index_used])
+for scenar_used in three_scenar:
+    
+    dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+
+    with pd.ExcelWriter('Data/fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+        dis.to_excel(params_writer, sheet_name = scenar_used)
     
 #%% Simulate fake scenarios
 
-three_scenar = ["Current Policies", "Fragmented World", "Net Zero 2050"]
 fake_mus = final_df.loc[three_scenar].copy()
 
 end = 2021 + len(Config.MUS_NZ)
