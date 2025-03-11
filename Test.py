@@ -165,14 +165,14 @@ def verify_filter():
 
 #%% Assess probabilities with no calibration
 
-def all_probas():
+def all_probas(future_path = "Data/fixed_params.xlsx"):
     no_calib = pd.DataFrame()
-    future = pd.ExcelFile("Data/fixed_params.xlsx")
+    future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
     
     for sheet in params_scenars:
-        probas, simul = no_calibration(sheet = sheet)
+        probas, simul = no_calibration(sheet = sheet, future_path = future_path)
         no_calib[sheet] = probas.flatten()
         
     # Scenario names
@@ -214,11 +214,12 @@ def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7,
                           future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
                           n_iter = 3, n_models = 5):
     calib = pd.DataFrame()
-    future = pd.ExcelFile("Data/fixed_params.xlsx")
+    future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
     
     for sheet in params_scenars:
+        print("Now calibrating with scenario ", sheet)
         model, elk, lk = best_model_future_data(len_simul, initial_law, future_path, scenar_path, sheet = sheet, n_iter = n_iter, n_models = n_models)
         calib[sheet] = model.probas.flatten()
         
@@ -256,14 +257,14 @@ def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7,
 #probas, mm = no_calibration()
 
 #%%
-no_calib = all_probas()
+no_calib = all_probas(future_path = "Data/full_fixed_params.xlsx")
 
 #no_calib.to_excel("Data/probas_comparison.xlsx", sheet_name = "No calibration")
 
-with pd.ExcelWriter('Data/probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
-    no_calib.to_excel(writer, sheet_name = "No calibration")
+#with pd.ExcelWriter('Data/full_probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
+#    no_calib.to_excel(writer, sheet_name = "No calibration")
 
-#calib = all_probas_calibration()
+calib = all_probas_calibration(future_path = "Data/full_fixed_params.xlsx")
 
-#with pd.ExcelWriter('Data/probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer: 
-#    calib.to_excel(writer, sheet_name = "Calibration")
+with pd.ExcelWriter('Data/full_probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer: 
+    calib.to_excel(writer, sheet_name = "Calibration")

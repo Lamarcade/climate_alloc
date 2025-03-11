@@ -156,6 +156,8 @@ print((summed - base).sum())
     
 #%%
 three_scenar = ["Current Policies", "Fragmented World", "Net Zero 2050"]
+
+all_scenar = list(Config.SCENAR2INDEX.keys())
 #%%
 
 central_std = Config.CENTRAL_STD
@@ -194,13 +196,60 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
         
     return(dis)
 
-for scenar_used in three_scenar:
+#for scenar_used in all_scenar:
     
-    dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+#    dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
 
-    with pd.ExcelWriter('Data/fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-        dis.to_excel(params_writer, sheet_name = scenar_used)
+#    with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+
+#%% Simulate data from intermediate scenarios 
+
+def simul_intermediate(central_std, beta, nus, sigmas, scenar_index = index_used, scenar_name = None, mus = final_df):
+    n = len(sigmas)
+    matrix = central_std * np.ones((n,n))
+    matrix += np.diag(sigmas)
+        
+    if scenar_name == "Optimistic":
+        mu_old = (mus.loc["Net Zero 2050", 2023] + mus.loc["Delayed transition", 2023])/2
+    elif scenar_name == "Pessimistic":
+        mu_old = (mus.loc["Current Policies", 2023] + mus.loc["Fragmented World", 2023])/2
+    else:
+        mu_old = (mus.loc["Current Policies", 2023] + mus.loc["Net Zero 2050", 2023])/2
     
+    di = multivariate_normal(mean = nus + mu_old, cov = matrix).rvs()
+    
+    dis = pd.DataFrame({2023: di})
+    
+    new_dis = {}
+    for col in mus.columns[mus.columns > 2023].values:
+        if scenar_name == "Optimistic":
+            mu_new = (mus.loc["Net Zero 2050", col] + mus.loc["Delayed transition", col])/2
+        elif scenar_name == "Pessimistic":
+            mu_new = (mus.loc["Current Policies", col] + mus.loc["Fragmented World", col])/2
+        else:
+            mu_new = (mus.loc["Current Policies", col] + mus.loc["Net Zero 2050", col])/2
+        dt = np.mean(di)
+        
+        matrix = (central_std + beta * (dt - mu_old)**2) * np.ones((n,n))
+        matrix += np.diag(sigmas)
+        di = multivariate_normal(mean = nus + mu_new, cov = matrix).rvs()
+        
+        new_dis[col] = di
+        
+        mu_old = mu_new
+    new_dis_df = pd.DataFrame(new_dis)
+    dis = pd.concat([dis, new_dis_df], axis=1)
+        
+    return(dis)
+
+#for scenar_used in ["Optimistic", "Pessimistic", "Middle"]:
+    
+#    dis = simul_intermediate(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+
+#    with pd.ExcelWriter('Data/intermediate.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+   
 #%% Simulate fake scenarios
 
 fake_mus = final_df.loc[three_scenar].copy()
