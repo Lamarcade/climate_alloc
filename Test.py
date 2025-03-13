@@ -120,10 +120,12 @@ def no_calibration(len_simul = 28, initial_law = np.ones(7)/7,
     
     simul.initialize_parameters(central_std, beta, nus, sigmas)
     simul.history_count = 0
+    
+    history_probas = np.zeros((7, fi.shape[1] - 1))
     for t in range(fi.shape[1] - 1):
-        probas = simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True)
+        history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True).flatten()
 
-    return probas, simul
+    return history_probas, simul
 
 #%%
 def plot_params(model, theoretical):
@@ -164,6 +166,7 @@ def verify_filter():
     return fake_simul, full_probas
 
 #%% Assess probabilities with no calibration
+###### OBSOLETE
 
 def all_probas(future_path = "Data/fixed_params.xlsx"):
     no_calib = pd.DataFrame()
@@ -178,6 +181,24 @@ def all_probas(future_path = "Data/fixed_params.xlsx"):
     # Scenario names
     no_calib.index = [Config.INDEX2SCENAR[i] for i in no_calib.index]
     return(no_calib)
+
+#%%
+
+def all_probas_history(future_path = "Data/fixed_params.xlsx", output = "Data/history_nocalib.xlsx"):
+    future = pd.ExcelFile(future_path)
+    
+    params_scenars = future.sheet_names
+    
+    for sheet in params_scenars:
+        all_probas, simul = no_calibration(sheet = sheet, future_path = future_path)
+  
+        scenario_df = pd.DataFrame(all_probas, columns = range(2024, 2051))
+    
+        # Scenario names
+        scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
+    
+        with pd.ExcelWriter(output, mode='a', if_sheet_exists = "overlay") as writer:  
+            scenario_df.to_excel(writer, sheet_name = sheet)
 
 #%% Randomly initialize different models and keep the best one
 
@@ -257,14 +278,18 @@ def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7,
 #probas, mm = no_calibration()
 
 #%%
-no_calib = all_probas(future_path = "Data/full_fixed_params.xlsx")
+#no_calib = all_probas(future_path = "Data/full_fixed_params.xlsx")
 
 #no_calib.to_excel("Data/probas_comparison.xlsx", sheet_name = "No calibration")
 
 #with pd.ExcelWriter('Data/full_probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
 #    no_calib.to_excel(writer, sheet_name = "No calibration")
 
-calib = all_probas_calibration(future_path = "Data/full_fixed_params.xlsx")
+#calib = all_probas_calibration(future_path = "Data/full_fixed_params.xlsx")
 
-with pd.ExcelWriter('Data/full_probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer: 
-    calib.to_excel(writer, sheet_name = "Calibration")
+#with pd.ExcelWriter('Data/full_probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer: 
+#    calib.to_excel(writer, sheet_name = "Calibration")
+
+#%% Evolution of probas
+
+all_probas_history(future_path = "Data/full_fixed_params.xlsx")
