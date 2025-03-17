@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import random as rd
 from scipy.stats import multivariate_normal, norm
+from matplotlib.backends.backend_pdf import PdfPages
 
 import Config
 
@@ -201,6 +202,7 @@ def all_probas_history(future_path = "Data/fixed_params.xlsx", output = "Data/hi
             scenario_df.to_excel(writer, sheet_name = sheet)
 
 #%% Randomly initialize different models and keep the best one
+#### OBSOLETE
 
 def best_model_future_data(len_simul = 28, initial_law = np.ones(7)/7, 
                           future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
@@ -248,6 +250,93 @@ def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7,
     calib.index = [Config.INDEX2SCENAR[i] for i in calib.index]
     return(calib)
 
+#%% All probabilities histories with calibration
+
+def best_model_probas(len_simul = 28, initial_law = np.ones(7)/7, 
+                          future_path = "Data/full_fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
+                          sheet = 0, n_iter = 3, n_models = 5):
+    
+    best_lk = 0
+    for i in range(n_models):
+        simul = Modelnu(len_simul, initial_law = initial_law)
+        simul.get_future_data_only(future_path, 
+                                        scenar_path = "Data/scenarios.xlsx", 
+                                        sheet = sheet)
+        fi = simul.indicators
+        p,q = fi.shape
+        central_std = np.random.rand()
+        beta = np.random.rand()
+        
+        nus = np.random.dirichlet(np.ones(p))
+    
+        nus -= 1/ p
+        sigmas = np.random.rand(p)
+        
+        simul.initialize_parameters(central_std, beta, nus, sigmas)
+        elk, lk, all_probas = simul.EM(simul.indicators, n_iter = n_iter, get_all_probas = True) 
+        
+        if lk[-1] > best_lk:
+            best_lk = lk[-1]
+            best_model = simul
+            best_probas = all_probas
+            
+    return best_model, best_probas
+
+def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", output = "Data/history_calib.xlsx"):
+    future = pd.ExcelFile(future_path)
+    
+    params_scenars = future.sheet_names
+    
+    for sheet in params_scenars:
+        print("Now calibrating with scenario ", sheet)
+        best_model, all_probas = best_model_probas(sheet = sheet, future_path = future_path)
+  
+        scenario_df = pd.DataFrame(all_probas, columns = range(2024, 2051))
+    
+        # Scenario names
+        scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
+    
+        with pd.ExcelWriter(output, mode='a', if_sheet_exists = "overlay") as writer:  
+            scenario_df.to_excel(writer, sheet_name = sheet)
+#%% Stackplot
+
+dict_abbrev = {"Below 2°C": "B2°", "Current Policies" : "CurPo", "Delayed transition" : "Delay",
+               "Fragmented World" : "Frag", "Low demand": "LowD", 
+               "Nationally Determined Contributions (NDCs)": "NDCs", 
+               "Net Zero 2050":"NZ", "Optimistic":"Opti", "Pessimistic":"Pessi", "Middle": "Mid"}
+
+colors = {
+    "B2°": "#1f77b4",
+    "CurPo": "#ff7f0e",
+    "Delay": "#2ca02c",
+    "Frag": "#d62728",
+    "LowD": "#9467bd",
+    "NDCs": "#8c564b",
+    "NZ": "#e377c2",
+}
+
+def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_nocalib.pdf"):
+    future = pd.ExcelFile(path)
+    
+    scenars = future.sheet_names
+    
+    with PdfPages(output) as pdf:
+        for sheet in scenars:
+            probas = future.parse(sheet, index_col = 0)
+            plot_probas = probas.transpose()
+            print(plot_probas)
+            plot_probas.rename(columns = dict_abbrev, inplace = True)
+            year_sort = plot_probas.index[-1]
+            plot_probas = plot_probas[plot_probas.columns[plot_probas.loc[year_sort].argsort()[::-1]]]
+            
+            color_list = [colors[col] for col in plot_probas.columns if col in colors]
+            
+            plot_probas.plot.area(title = sheet, color = color_list)
+            plt.legend(loc = 'upper left')
+            
+            pdf.savefig()
+            plt.close()
+
 #%% Tests
 
 # =============================================================================
@@ -292,4 +381,15 @@ def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7,
 
 #%% Evolution of probas
 
-all_probas_history(future_path = "Data/full_fixed_params.xlsx")
+#all_probas_history(future_path = "Data/full_fixed_params.xlsx")
+#probas_plot()
+
+#all_probas_history_calib(output= "Data/history_calib2.xlsx")
+#probas_plot(path = "Data/history_calib2.xlsx", output = "Figs/stackplots_calib.pdf")
+
+# With intermediate scenarios
+
+#no_calib = all_probas_history(future_path = "Data/intermediate.xlsx", output = "Data/history_intermediate.xlsx")
+
+probas_plot(path = "Data/history_intermediate.xlsx", output = "Figs/stackplots_intermediate.pdf")
+

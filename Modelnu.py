@@ -498,7 +498,7 @@ class Modelnu():
         self.pi = self.probas
 
       
-    def EM(self, full_intensities, n_iter):
+    def EM(self, full_intensities, n_iter, get_all_probas = False, reset_probas = True):
         '''
         Perform the EM algorithm to find better estimates for the density parameters
 
@@ -517,21 +517,29 @@ class Modelnu():
         expected_loglk = []
         loglk = [self.hist_log_lk()]
         for l in range(n_iter):
+            if reset_probas:
+                self.probas = np.ones(len(self.mus))/len(self.mus)
+                self.probas = self.probas[:, np.newaxis]
             # E step
             expected_loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
             print("Q1 + Q2 =", expected_loglk[l])
             
             # Reset time, which is updated at every filter step 
+            
+            all_probas = np.zeros((len(self.mus), full_intensities.shape[1] - 1))
+                
             self.history_count = 0
             for t in range(full_intensities.shape[1] - 1):
                 # Update probabilities thanks to the filter
-                self.filter_step(full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0))
+                all_probas[:,t] = self.filter_step(full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), get_probas = True).flatten()
             
             # M step: Update theta and pi
             self.M_step(full_intensities)
-            self.probas = self.pi
+            #self.probas = self.pi
             loglk.append(self.hist_log_lk())
 
         print("Final Q1+Q2 =",self.log_lk(self.theta, self.pi, full_intensities))
         print("Q1 + Q2 history :", expected_loglk)
+        if get_all_probas:
+            return expected_loglk, loglk, all_probas
         return expected_loglk, loglk

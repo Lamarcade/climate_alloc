@@ -40,6 +40,8 @@ def scenario_means():
     #%%
     scenarios_means = filtered[filtered["Variable"] == "Emissions|CO2"]
     
+    
+    #Years as the row
     scenar = scenarios_means.melt(
         id_vars=["Model", "Scenario", "Region", "Variable", "Unit"],
         var_name="Year",
