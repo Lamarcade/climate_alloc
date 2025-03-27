@@ -16,7 +16,7 @@ from Modelnu import Modelnu
 
 sns.set_theme()
 
-stoxx = pd.read_excel("Data/Stoxx_data.xlsx")
+stoxx = pd.read_excel("Data/Stoxx_data_Scope12.xlsx")
 
 scenarios = pd.read_excel("Data/scenarios.xlsx")
 

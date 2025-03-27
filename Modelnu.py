@@ -138,17 +138,11 @@ class Modelnu():
         
         overall_mean_decarbonation_rate = total_numerator / total_denominator if total_denominator != 0 else np.nan
             
-        mu = 0
-        
         # Duration of the historical data
         self.T0 = self.indicators.shape[1] 
-        
+  
         for t in range(self.T0):
-            # REPLACE HERE
-            mu += self.indicators.mean(axis = None, skipna = True)
-        mu /= self.T0
-        for t in range(self.T0):
-            self.mus.iloc[:, t] = mu * np.ones(len(initial_law))   
+            self.mus.iloc[:, t] = overall_mean_decarbonation_rate * np.ones(len(initial_law))   
     
     def compute_mean_rates(self, rates,emissions):
         dt = np.sum(rates*emissions/np.sum(emissions))

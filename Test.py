@@ -108,6 +108,8 @@ beta = Config.BETA
 nus = Config.NUS
 sigmas = Config.SIGMAS
 
+
+
 #%% 
 def no_calibration(len_simul = 28, initial_law = np.ones(7)/7, 
                    future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx",
@@ -383,8 +385,8 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #%% Evolution of probas
 
-#all_probas_history(future_path = "Data/full_fixed_params.xlsx")
-#probas_plot()
+all_probas_history(future_path = "Data/full_fixed_params.xlsx")
+probas_plot()
 
 #all_probas_history_calib(output= "Data/history_calib2.xlsx")
 #probas_plot(path = "Data/history_calib2.xlsx", output = "Figs/stackplots_calib.pdf")
