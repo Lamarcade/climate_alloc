@@ -24,7 +24,7 @@ import matplotlib.pyplot as plt
 class Modelnu():  
     
 #%% Initialization
-    def __init__(self, Time, initial_law = np.array([0.35, 0.15, 0.25, 0.25]), data_file = "Data/Stoxx_data.xlsx", history = True):
+    def __init__(self, Time, initial_law = np.array([0.35, 0.15, 0.25, 0.25]), data_file = "Data/Stoxx_data_Scope12.xlsx", history = True):
         '''
         Initialize an instance of the model computing the filter and performing the EM algorithm
 
@@ -64,46 +64,96 @@ class Modelnu():
         df = df.drop(df.columns[0], axis = 1)
         self.df = df
         
+        
+        for i in range(14, -1, -1):
+            df["Scope12 Y-{i}".format(i = i)] = df["Scope 1 Y-{i}".format(i = i)] + df["Scope 2 Y-{i}".format(i = i)]
+       
         indicators = df[["Instrument","GICS Sector Name"]].copy()
+        
         for i in range(13, -1, -1):
             # Actual year / Former year from Y-13 to Y-0
             #indicators["Rate Y-{i}".format(i = i)] = 100 * df["Total Y-{i}".format(i = i)] / df["Total Y-{j}".format(j = i+1)]
-            
             # Keep as a percentage, with absolute percentage increase to account for negative values
-            indicators["Rate Y-{i}".format(i = i)] = df["Total Y-{i}".format(i = i)] / abs(df["Total Y-{j}".format(j = i+1)])
+
+            indicators["Rate Y-{i}".format(i = i)] = (df["Scope12 Y-{i}".format(i = i)] - df["Scope12 Y-{j}".format(j = i+1)]) / abs(df["Scope12 Y-{j}".format(j = i+1)])
         
         # Reduce number of rates and drop NaN
         indicators.replace([np.inf, -np.inf], np.nan, inplace = True)
-        ind = indicators.dropna()
-        ind = ind.iloc[:6]
+        
+        #ind = indicators.dropna()
+        #ind = ind.iloc[:6]
         
         # Use sector decarbonation rates
         sectors = indicators.copy()
-        sectors.drop(sectors.columns[0], axis = 1, inplace = True)
-        sectors = sectors.groupby(by= "GICS Sector Name").mean()
+        #sectors.drop(sectors.columns[0], axis = 1, inplace = True)
+        
+        # REPLACE HERE
+        df_merged = sectors.merge(df, on=["Instrument", "GICS Sector Name"])
+
+        decarbonation_rates = {}
+        
+        for i in range(13, -1, -1):
+            numerator = df_merged.groupby("GICS Sector Name").apply(
+                lambda x: np.nansum(x[f"Rate Y-{i}"] * x[f"Scope12 Y-{i+1}"])
+            )
+            denominator = df_merged.groupby("GICS Sector Name")[f"Scope12 Y-{i+1}"].sum()
+            
+            decarbonation_rates[f"Decarbonation Rate Y-{i}"] = numerator / denominator
+        
+        decarbonation_df = pd.DataFrame(decarbonation_rates)
         
         # Real Estate decarbonation rates have many outliers
-        sectors.drop("Real Estate", inplace = True)
+        decarbonation_df.drop("Real Estate", inplace = True)
         
-        self.indicators = sectors
+        self.indicators = decarbonation_df
         #print(sectors.columns)
         
         # Central carbon rates
         self.mus = pd.DataFrame(np.zeros((len(initial_law),Time)))
         
         # Historical central carbon rate
+        
+        annual_mean_rates = {}
+
+        for i in range(13, -1, -1):
+            numerator = np.nansum(df_merged[f"Rate Y-{i}"] * df_merged[f"Scope12 Y-{i+1}"])
+            denominator = np.nansum(df_merged[f"Scope12 Y-{i+1}"])
+            
+            if denominator != 0:
+                annual_mean_rates[f"Decarbonation Rate Y-{i}"] = numerator / denominator
+            else:
+                annual_mean_rates[f"Decarbonation Rate Y-{i}"] = np.nan
+        
+        annual_mean_df = pd.DataFrame(annual_mean_rates, index=[0]).T
+        annual_mean_df.columns = ["Annual Mean Decarbonation Rate"]
+        
+        total_numerator = np.nansum([
+            annual_mean_df["Annual Mean Decarbonation Rate"].iloc[i] * np.nansum(df_merged[f"Scope12 Y-{i+1}"]) 
+            for i in range(13, -1, -1)
+        ])
+        total_denominator = np.nansum([
+            np.nansum(df_merged[f"Scope12 Y-{i+1}"]) 
+            for i in range(13, -1, -1)
+        ])
+        
+        overall_mean_decarbonation_rate = total_numerator / total_denominator if total_denominator != 0 else np.nan
+            
         mu = 0
         
         # Duration of the historical data
         self.T0 = self.indicators.shape[1] 
         
         for t in range(self.T0):
+            # REPLACE HERE
             mu += self.indicators.mean(axis = None, skipna = True)
         mu /= self.T0
         for t in range(self.T0):
             self.mus.iloc[:, t] = mu * np.ones(len(initial_law))   
     
-        
+    def compute_mean_rates(self, rates,emissions):
+        dt = np.sum(rates*emissions/np.sum(emissions))
+        return(dt)
+    
     def initialize_parameters(self, central_std, beta, nus, sigmas):
         '''
         Initial guess for the EM parameters
@@ -138,7 +188,7 @@ class Modelnu():
         start_year = 2010
         
         for i in range(0, 14):
-            self.indicators.rename(columns = {f"Rate Y-{i}": 2023-i}, inplace = True)
+            self.indicators.rename(columns = {f"Decarbonation Rate Y-{i}": 2023-i}, inplace = True)
         #self.mus.columns = [str(start_year + i) for i in range(self.mus.shape[1])]
         self.mus.columns = [start_year + i for i in range(self.mus.shape[1])]
 
@@ -197,6 +247,11 @@ class Modelnu():
         self.indicators = self.indicators.iloc[:, :0] 
         
         self.indicators = pd.concat([self.indicators, simul_sorted.loc[:, simul_sorted.columns[1:]]], axis=1)
+        
+    def emissions_by_sectors(self):
+        self.emissions = self.df[[f"Scope12 Y-{i}" for i in range(14, -1, -1)] + ["GICS Sector Name"]].groupby(by = "GICS Sector Name").sum()
+        for i in range(0, 15):
+            self.emissions.rename(columns = {f"Scope12 Y-{i}": 2023-i}, inplace = True)
         
 
 #%% Evaluation functions    
@@ -382,6 +437,7 @@ class Modelnu():
             # Parameters central std, betas, nus are used in the density here
             
             # At t = 0 need to use historical
+            # REPLACE HERE 
             q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), t, is_log = True).T, self.probas).item()
         return q1
     
@@ -531,6 +587,7 @@ class Modelnu():
             self.history_count = 0
             for t in range(full_intensities.shape[1] - 1):
                 # Update probabilities thanks to the filter
+                # REPLACE HERE
                 all_probas[:,t] = self.filter_step(full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), get_probas = True).flatten()
             
             # M step: Update theta and pi
