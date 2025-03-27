@@ -185,7 +185,7 @@ def all_probas(future_path = "Data/fixed_params.xlsx"):
 
 #%%
 
-def all_probas_history(future_path = "Data/fixed_params.xlsx", output = "Data/history_nocalib.xlsx"):
+def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Data/history_nocalib.xlsx"):
     future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
@@ -233,8 +233,10 @@ def best_model_future_data(len_simul = 28, initial_law = np.ones(7)/7,
             
     return best_model, elk, lk
 
+#%%
+
 def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7, 
-                          future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
+                          future_path = "Data/full_fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
                           n_iter = 3, n_models = 5):
     calib = pd.DataFrame()
     future = pd.ExcelFile(future_path)
@@ -324,7 +326,7 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
         for sheet in scenars:
             probas = future.parse(sheet, index_col = 0)
             plot_probas = probas.transpose()
-            print(plot_probas)
+
             plot_probas.rename(columns = dict_abbrev, inplace = True)
             year_sort = plot_probas.index[-1]
             plot_probas = plot_probas[plot_probas.columns[plot_probas.loc[year_sort].argsort()[::-1]]]
@@ -391,5 +393,5 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #no_calib = all_probas_history(future_path = "Data/intermediate.xlsx", output = "Data/history_intermediate.xlsx")
 
-probas_plot(path = "Data/history_intermediate.xlsx", output = "Figs/stackplots_intermediate.pdf")
+#probas_plot(path = "Data/history_intermediate.xlsx", output = "Figs/stackplots_intermediate.pdf")
 

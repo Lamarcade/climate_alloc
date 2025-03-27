@@ -24,7 +24,7 @@ sectors = ["Communication Services", "Consumer Discretionary",
 
 def scenario_means():
     #data = pd.DataFrame({"Sector": sectors})
-    data = pd.DataFrame(100, index=sectors, columns=[f"Y-{i}" for i in range(10, -1, -1)])
+    #data = pd.DataFrame(100, index=sectors, columns=[f"Y-{i}" for i in range(10, -1, -1)])
     
     folder = "Data/NGFS5/"
     file = "IAM_data.xlsx"
@@ -34,11 +34,11 @@ def scenario_means():
     # Approximation EU-15, lacks Norway, Switzerland and Poland for CAC40
     filtered = ngfs[ngfs["Region"] == "GCAM 6.0 NGFS|EU-15"]
     
-    indic = "CO2"
+    indic = "Kyoto"
     filtered = filtered[filtered["Variable"].str.contains(indic, case=False, na=False)]
     
     #%%
-    scenarios_means = filtered[filtered["Variable"] == "Emissions|CO2"]
+    scenarios_means = filtered[filtered["Variable"] == "Emissions|Kyoto Gases"]
     
     
     #Years as the row
@@ -79,16 +79,18 @@ def scenario_means():
     #%%
     scenario_data = df_int.copy()
     scenario_data["Ratio"] = scenario_data.groupby(['Model', 'Scenario', 'Region', 'Variable'])['Value']\
-                     .transform(lambda x: x / abs(x.shift(1)))
+                     .transform(lambda x: (x - x.shift(1)) / abs(x.shift(1)))
     scenario_data.drop({"Model", "Region", "Unit", "Value", "Variable"}, axis = 1, inplace = True)
     
     
     final_df = scenario_data.pivot(index=["Scenario"], columns="Year", values="Ratio")
     
-    #final_df.to_excel("Data/scenarios.xlsx")
+    final_df.to_excel("Data/scenarios.xlsx")
+    return(final_df)
 
 #%%
-final_df = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
+#final_df = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
+final_df = scenario_means()
 #%%
 df_plot = final_df.reset_index().melt(id_vars="Scenario", var_name="Year", value_name="Ratio")
 plt.figure(figsize=(10, 6))
@@ -96,7 +98,7 @@ sns.lineplot(data=df_plot, x="Year", y="Ratio", hue="Scenario", marker="o")
 
 plt.title("Carbonation rate for each scenario", fontsize=16)
 plt.xlabel("Year", fontsize=14)
-plt.ylabel("CR", fontsize=14)
+plt.ylabel("CR (Kyoto Gases)", fontsize=14)
 plt.legend(title="Scenario", fontsize=12)
 plt.grid(True)
 plt.show()
@@ -153,8 +155,8 @@ paths = simul_constant(scenar_index = index_used)
 summed, base = paths.mean(axis = 0), final_df.loc[index2scenar[index_used]]
 print((summed - base).sum())
 
-#with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
-#    paths.to_excel(writer, sheet_name = index2scenar[index_used])
+with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
+    paths.to_excel(writer, sheet_name = index2scenar[index_used])
     
 #%%
 three_scenar = ["Current Policies", "Fragmented World", "Net Zero 2050"]
@@ -198,12 +200,12 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
         
     return(dis)
 
-#for scenar_used in all_scenar:
+for scenar_used in all_scenar:
     
-#    dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+    dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
 
-#    with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-#        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+    with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
 
 #%% Simulate data from intermediate scenarios 
 
@@ -245,12 +247,12 @@ def simul_intermediate(central_std, beta, nus, sigmas, scenar_index = index_used
         
     return(dis)
 
-#for scenar_used in ["Optimistic", "Pessimistic", "Middle"]:
+for scenar_used in ["Optimistic", "Pessimistic", "Middle"]:
     
-#    dis = simul_intermediate(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+    dis = simul_intermediate(central_std, beta, nus, sigmas, scenar_name = scenar_used)
 
-#    with pd.ExcelWriter('Data/intermediate.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-#        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+    with pd.ExcelWriter('Data/intermediate.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
    
 #%% Simulate fake scenarios
 
@@ -267,14 +269,12 @@ fake_mus.loc["Current Policies", 2021:] = Config.MUS_CURPO
 fake_mus.loc["Fragmented World", 2021:] = Config.MUS_FW
 fake_mus.loc["Net Zero 2050", 2021:] = Config.MUS_NZ
 
-# =============================================================================
-# with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
-#     fake_mus.to_excel(fake_writer)
-#     
-# #scenar_used = "Net Zero 2050"
-# for scenar_used in three_scenar:
-#     fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
-#     
-#     with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-#         fake_dis.to_excel(params_writer, sheet_name = scenar_used)
-# =============================================================================
+with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
+    fake_mus.to_excel(fake_writer)
+    
+#scenar_used = "Net Zero 2050"
+for scenar_used in three_scenar:
+    fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
+    
+    with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+        fake_dis.to_excel(params_writer, sheet_name = scenar_used)
