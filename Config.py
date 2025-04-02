@@ -6,16 +6,16 @@ Created on Mon Feb  3 17:23:29 2025
 """
 import numpy as np
 
-CENTRAL_STD = 0.05
-BETA = 0.0001
-NUS = np.array([0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05])
-SIGMAS = 0.001 * np.ones(len(NUS))
+CENTRAL_STD = 50
+BETA = 0.1
+NUS = np.array([2, -3, 1, -0.5, 1.5, -1.0, -1.5, 3.0, -1.0, -0.5])*0.1
+SIGMAS = 1 * np.ones(len(NUS))
 
 N_YEARS = 500
 
-MUS_CURPO = np.linspace(0.97, 5.0, N_YEARS)
-MUS_FW = np.linspace(0.97, 0, N_YEARS)
-MUS_NZ = np.linspace(0.97, -5.0, N_YEARS)
+MUS_CURPO = 100 * np.linspace(0.97, 5.0, N_YEARS)
+MUS_FW = 100 * np.linspace(0.97, 0, N_YEARS)
+MUS_NZ = 100 * np.linspace(0.97, -5.0, N_YEARS)
 
 SCENAR2INDEX = {"Below 2°C": 0, "Current Policies" : 1, "Delayed transition" : 2,
                "Fragmented World" : 3, "Low demand": 4, 

@@ -75,7 +75,7 @@ class Modelnu():
             #indicators["Rate Y-{i}".format(i = i)] = 100 * df["Total Y-{i}".format(i = i)] / df["Total Y-{j}".format(j = i+1)]
             # Keep as a percentage, with absolute percentage increase to account for negative values
 
-            indicators["Rate Y-{i}".format(i = i)] = (df["Scope12 Y-{i}".format(i = i)] - df["Scope12 Y-{j}".format(j = i+1)]) / abs(df["Scope12 Y-{j}".format(j = i+1)])
+            indicators["Rate Y-{i}".format(i = i)] = 100 * (df["Scope12 Y-{i}".format(i = i)] - df["Scope12 Y-{j}".format(j = i+1)]) / abs(df["Scope12 Y-{j}".format(j = i+1)])
         
         # Reduce number of rates and drop NaN
         indicators.replace([np.inf, -np.inf], np.nan, inplace = True)
@@ -142,7 +142,9 @@ class Modelnu():
         self.T0 = self.indicators.shape[1] 
   
         for t in range(self.T0):
-            self.mus.iloc[:, t] = overall_mean_decarbonation_rate * np.ones(len(initial_law))   
+            self.mus.iloc[:, t] = overall_mean_decarbonation_rate * np.ones(len(initial_law)) 
+            
+        self.emissions_by_sectors()
     
     def compute_mean_rates(self, rates,emissions):
         dt = np.sum(rates*emissions/np.sum(emissions))
@@ -244,9 +246,14 @@ class Modelnu():
         
     def emissions_by_sectors(self):
         self.emissions = self.df[[f"Scope12 Y-{i}" for i in range(14, -1, -1)] + ["GICS Sector Name"]].groupby(by = "GICS Sector Name").sum()
-        for i in range(0, 15):
+        for i in range(14, -1, -1):
             self.emissions.rename(columns = {f"Scope12 Y-{i}": 2023-i}, inplace = True)
-        
+        #for i in range(2024, 2024+len(self.indicators)):
+        #    self.emissions[i] = self.indicators[i] * self.emissions[i-1] / 100 + self.emissions[i-1]
+            
+    def update_emissions(self):
+        max_year = self.emissions.columns[-1] +1
+        self.emissions[max_year] = self.indicators[max_year] * self.emissions[max_year-1] / 100 + self.emissions[max_year-1]
 
 #%% Evaluation functions    
  
@@ -294,24 +301,33 @@ class Modelnu():
         
         det = np.prod(theta[1+n:]) * denom
         #det = np.exp(np.sum(np.log(theta[1+n:])))
+        #print("det1", det)
+        #print("det", np.exp(np.sum(np.log(theta[1+n:]))))
         
         # Computing the density
         coeff = 1/ np.sqrt( (2* np.pi) **n * det) 
         #print("denom", denom)
         #print("det", det)
         #print("Coeff", coeff)
+        #wait = input("Enter")
         
         # self.mus.iloc[scenar, t+1] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
         
         vector = (intensities - (self.mus.iloc[scenar, t+1] + np.concatenate([theta[2:1+n], [-np.sum(theta[2:1+n])]])))
+       # print("vector", vector)
 
         inside = -1/2 * vector.dot(inverse).dot(vector)
+        #print("inside", inside)
+       # print(inverse)
         
         if is_log:
             #print("Logcoeff", np.log(coeff))
             return(np.log(coeff) + inside)
         else:
+            #print("coeff", coeff)
+            #print("fac", np.exp(inside))
+            #print(np.log(coeff) + inside)
             return(coeff * np.exp(inside))
  
 # intensities = self.df.loc[:,self.history_count + 1]
@@ -378,10 +394,12 @@ class Modelnu():
         '''
         # 2.12
         #self.probas = self.pi
+        
         density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
         #print("Density val", density_val)
         #print()
         #print(intensities)
+        #print("Prev")
         #print(previous_intensity)
         #print()
         #wait = input("Enter")
@@ -397,6 +415,7 @@ class Modelnu():
         self.history_marginal[self.history_count] = marginal
 
         self.probas = num/marginal
+        self.update_emissions()
         #print(self.probas)
         if get_probas:
             return self.probas

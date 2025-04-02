@@ -126,7 +126,9 @@ def no_calibration(len_simul = 28, initial_law = np.ones(7)/7,
     
     history_probas = np.zeros((7, fi.shape[1] - 1))
     for t in range(fi.shape[1] - 1):
-        history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True).flatten()
+        # CHANGE MEAN HERE
+        #history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True).flatten()
+        history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[2023 + t-1]), get_probas = True).flatten()
 
     return history_probas, simul
 
@@ -164,6 +166,8 @@ def verify_filter():
     full_probas = pd.DataFrame(np.zeros((3, fi.shape[1] - 1)))
     for t in range(fi.shape[1] - 1):
         # Update probabilities thanks to the filter
+        
+        # Change here
         probas = fake_simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True)
         full_probas.iloc[:, t] = np.array(probas).reshape(-1)  
     return fake_simul, full_probas
@@ -202,6 +206,7 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
     
         with pd.ExcelWriter(output, mode='a', if_sheet_exists = "overlay") as writer:  
             scenario_df.to_excel(writer, sheet_name = sheet)
+            
 
 #%% Randomly initialize different models and keep the best one
 #### OBSOLETE
@@ -385,7 +390,7 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #%% Evolution of probas
 
-all_probas_history(future_path = "Data/full_fixed_params.xlsx")
+simul = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
 probas_plot()
 
 #all_probas_history_calib(output= "Data/history_calib2.xlsx")

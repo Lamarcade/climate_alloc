@@ -79,7 +79,7 @@ def scenario_means():
     #%%
     scenario_data = df_int.copy()
     scenario_data["Ratio"] = scenario_data.groupby(['Model', 'Scenario', 'Region', 'Variable'])['Value']\
-                     .transform(lambda x: (x - x.shift(1)) / abs(x.shift(1)))
+                     .transform(lambda x: 100 * (x - x.shift(1)) / abs(x.shift(1)))
     scenario_data.drop({"Model", "Region", "Unit", "Value", "Variable"}, axis = 1, inplace = True)
     
     
