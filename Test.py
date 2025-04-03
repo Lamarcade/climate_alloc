@@ -60,13 +60,13 @@ def comparison(initial_law = np.ones(7)/7):
     
     #nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
     
-    central_std = np.random.rand()
+    central_std = 10 * np.random.rand()
     beta = np.random.rand()
     
-    nus = np.random.dirichlet(np.ones(p))
+    nus = 10 * np.random.dirichlet(np.ones(p))
 
-    nus -= 1/ p
-    sigmas = np.random.rand(p)
+    nus -= 10 * 1/ p
+    sigmas = 2 * np.random.rand(p)
     
     mm.initialize_parameters(central_std, beta, nus, sigmas)
     
@@ -108,7 +108,7 @@ beta = Config.BETA
 nus = Config.NUS
 sigmas = Config.SIGMAS
 
-
+future = Config.FUTURE_START_YEAR
 
 #%% 
 def no_calibration(len_simul = 28, initial_law = np.ones(7)/7, 
@@ -126,9 +126,8 @@ def no_calibration(len_simul = 28, initial_law = np.ones(7)/7,
     
     history_probas = np.zeros((7, fi.shape[1] - 1))
     for t in range(fi.shape[1] - 1):
-        # CHANGE MEAN HERE
-        #history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True).flatten()
-        history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[2023 + t-1]), get_probas = True).flatten()
+
+        history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[future + t-1]), get_probas = True).flatten()
 
     return history_probas, simul
 
@@ -150,14 +149,14 @@ def plot_params(model, theoretical):
 
 #%% Filter with ideal parameters
 
-def verify_filter():
+def verify_filter(fake_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx", sheet = 0):
     fake_simul = Modelnu(len(Config.MUS_NZ), initial_law = np.array([0.5, 0.3, 0.2]))
     
     # Sheets
     # 1 : NZ 2:CurPo 3: FW
-    fake_simul.get_future_data_only("Data/fake_simul.xlsx", 
-                                    scenar_path = "Data/fake_scenarios.xlsx", 
-                                    sheet = 0)
+    fake_simul.get_future_data_only(fake_path, 
+                                    scenar_path = scenar_path, 
+                                    sheet = sheet)
     fi = fake_simul.indicators
     p,q = fi.shape
     
@@ -167,8 +166,7 @@ def verify_filter():
     for t in range(fi.shape[1] - 1):
         # Update probabilities thanks to the filter
         
-        # Change here
-        probas = fake_simul.filter_step(fi.iloc[:,t+1], fi.iloc[:,t].mean(axis = 0), get_probas = True)
+        probas = fake_simul.filter_step(fi.iloc[:,t+1], fake_simul.compute_mean_rates(fi.iloc[:,t], fake_simul.emissions[future + t-1]), get_probas = True)
         full_probas.iloc[:, t] = np.array(probas).reshape(-1)  
     return fake_simul, full_probas
 
@@ -390,8 +388,8 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #%% Evolution of probas
 
-simul = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
-probas_plot()
+#simul = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
+#probas_plot()
 
 #all_probas_history_calib(output= "Data/history_calib2.xlsx")
 #probas_plot(path = "Data/history_calib2.xlsx", output = "Figs/stackplots_calib.pdf")

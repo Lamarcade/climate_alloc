@@ -64,6 +64,7 @@ class Modelnu():
         df = df.drop(df.columns[0], axis = 1)
         self.df = df
         
+        self.start_year = 2009
         
         for i in range(14, -1, -1):
             df["Scope12 Y-{i}".format(i = i)] = df["Scope 1 Y-{i}".format(i = i)] + df["Scope 2 Y-{i}".format(i = i)]
@@ -87,7 +88,6 @@ class Modelnu():
         sectors = indicators.copy()
         #sectors.drop(sectors.columns[0], axis = 1, inplace = True)
         
-        # REPLACE HERE
         df_merged = sectors.merge(df, on=["Instrument", "GICS Sector Name"])
 
         decarbonation_rates = {}
@@ -126,6 +126,8 @@ class Modelnu():
         
         annual_mean_df = pd.DataFrame(annual_mean_rates, index=[0]).T
         annual_mean_df.columns = ["Annual Mean Decarbonation Rate"]
+        
+        self.rates = annual_mean_df
         
         total_numerator = np.nansum([
             annual_mean_df["Annual Mean Decarbonation Rate"].iloc[i] * np.nansum(df_merged[f"Scope12 Y-{i+1}"]) 
@@ -222,6 +224,9 @@ class Modelnu():
         simul = pd.read_excel(path, sheet_name = sheet)
         
         start_year = 2023
+        
+        self.start_year = start_year
+    
         simul_sorted = simul.sort_values(by=start_year, ascending=False)
         
         self.get_scenario_data(scenar_path)
@@ -396,7 +401,7 @@ class Modelnu():
         #self.probas = self.pi
         
         density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
-        #print("Density val", density_val)
+        print("Density val", density_val)
         #print()
         #print(intensities)
         #print("Prev")
@@ -415,7 +420,8 @@ class Modelnu():
         self.history_marginal[self.history_count] = marginal
 
         self.probas = num/marginal
-        self.update_emissions()
+        if self.history_count + self.start_year >= 2023:
+            self.update_emissions()
         #print(self.probas)
         if get_probas:
             return self.probas
@@ -446,12 +452,12 @@ class Modelnu():
 
         '''
         q1 = 0
-        for t in range(full_intensities.shape[1] -1):
+        # At t=0 use a previous mean rate of 0
+        q1 = - np.dot(self.full_density(theta, full_intensities.iloc[:,1], 0 * full_intensities.iloc[:,0].mean(axis = 0), 0, is_log = True).T, self.probas).item()
+        for t in range(1,full_intensities.shape[1] -1):
             # Parameters central std, betas, nus are used in the density here
-            
-            # At t = 0 need to use historical
-            # REPLACE HERE 
-            q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), t, is_log = True).T, self.probas).item()
+            #q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), t, is_log = True).T, self.probas).item()
+            q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t-1]), t, is_log = True).T, self.probas).item()
         return q1
     
     def q2(self, pi):
@@ -583,25 +589,30 @@ class Modelnu():
         None.
 
         '''
-        expected_loglk = []
+        expected_loglk = [0]
         loglk = [self.hist_log_lk()]
         for l in range(n_iter):
+            self.emissions_by_sectors()
             if reset_probas:
                 self.probas = np.ones(len(self.mus))/len(self.mus)
                 self.probas = self.probas[:, np.newaxis]
             # E step
-            expected_loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
+            if l > 0:
+                expected_loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
             print("Q1 + Q2 =", expected_loglk[l])
             
             # Reset time, which is updated at every filter step 
             
-            all_probas = np.zeros((len(self.mus), full_intensities.shape[1] - 1))
+            all_probas = np.zeros((len(self.mus), full_intensities.shape[1] - 2))
                 
             self.history_count = 0
-            for t in range(full_intensities.shape[1] - 1):
+            for t in range(1,full_intensities.shape[1] - 1):
+                print("t = ", t)
+                print("emissions t = ", self.start_year + t-1)
                 # Update probabilities thanks to the filter
-                # REPLACE HERE
-                all_probas[:,t] = self.filter_step(full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), get_probas = True).flatten()
+
+                all_probas[:,t-1] = self.filter_step(full_intensities.iloc[:,t+1], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t-1]), get_probas = True).flatten()
+                print(all_probas[:, t-1])
             
             # M step: Update theta and pi
             self.M_step(full_intensities)
