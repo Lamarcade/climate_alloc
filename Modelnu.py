@@ -401,7 +401,7 @@ class Modelnu():
         #self.probas = self.pi
         
         density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
-        print("Density val", density_val)
+        #print("Density val", density_val)
         #print()
         #print(intensities)
         #print("Prev")
@@ -420,7 +420,7 @@ class Modelnu():
         self.history_marginal[self.history_count] = marginal
 
         self.probas = num/marginal
-        if self.history_count + self.start_year >= 2023:
+        if self.history_count + self.start_year > 2023:
             self.update_emissions()
         #print(self.probas)
         if get_probas:
@@ -453,11 +453,11 @@ class Modelnu():
         '''
         q1 = 0
         # At t=0 use a previous mean rate of 0
-        q1 = - np.dot(self.full_density(theta, full_intensities.iloc[:,1], 0 * full_intensities.iloc[:,0].mean(axis = 0), 0, is_log = True).T, self.probas).item()
-        for t in range(1,full_intensities.shape[1] -1):
+        q1 = - np.dot(self.full_density(theta, full_intensities.iloc[:,0], 0 * full_intensities.iloc[:,0].mean(axis = 0), 0, is_log = True).T, self.probas).item()
+        for t in range(1,full_intensities.shape[1]):
             # Parameters central std, betas, nus are used in the density here
             #q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), t, is_log = True).T, self.probas).item()
-            q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t-1]), t, is_log = True).T, self.probas).item()
+            q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]), t, is_log = True).T, self.probas).item()
         return q1
     
     def q2(self, pi):
@@ -603,16 +603,19 @@ class Modelnu():
             
             # Reset time, which is updated at every filter step 
             
-            all_probas = np.zeros((len(self.mus), full_intensities.shape[1] - 2))
+            all_probas = np.zeros((len(self.mus), full_intensities.shape[1]))
                 
             self.history_count = 0
-            for t in range(1,full_intensities.shape[1] - 1):
+            for t in range(full_intensities.shape[1]):
                 print("t = ", t)
-                print("emissions t = ", self.start_year + t-1)
+                print("emissions t = ", self.start_year + t)
                 # Update probabilities thanks to the filter
 
-                all_probas[:,t-1] = self.filter_step(full_intensities.iloc[:,t+1], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t-1]), get_probas = True).flatten()
-                print(all_probas[:, t-1])
+                all_probas[:,t-1] = self.filter_step(full_intensities.iloc[:,t], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]), get_probas = True).flatten()
+                print("Probas",  all_probas[:, t-1])
+                
+                print("Indicators time ", full_intensities.columns[t])
+                print("Decarbo rate ", self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]))
             
             # M step: Update theta and pi
             self.M_step(full_intensities)

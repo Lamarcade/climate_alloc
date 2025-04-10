@@ -49,8 +49,8 @@ def full_process(initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
 
 #%% Compare only up to 2024
 
-def comparison(initial_law = np.ones(7)/7):
-    mm = Modelnu(14, initial_law = initial_law)
+def comparison(initial_law = np.ones(7)/7, n_iter = 2):
+    mm = Modelnu(15, initial_law = initial_law)
     mm.rename_rates()
     fi = mm.indicators
     p,q = fi.shape
@@ -66,18 +66,18 @@ def comparison(initial_law = np.ones(7)/7):
     nus = 10 * np.random.dirichlet(np.ones(p))
 
     nus -= 10 * 1/ p
-    sigmas = 2 * np.random.rand(p)
+    sigmas = 100 * np.random.rand(p)
     
     mm.initialize_parameters(central_std, beta, nus, sigmas)
     
     dicti = mm.get_scenario_data(date_max = 2024)
     #mm.get_simul_data(sheet = sheet)
     
-    elk, lk = mm.EM(mm.indicators, n_iter = 2)
+    elk, lk, probas = mm.EM(mm.indicators, n_iter = n_iter, get_all_probas = True)
     
     
     
-    return mm, elk, lk, dicti
+    return mm, elk, lk, dicti, probas
 
 #%%  
 
@@ -127,7 +127,7 @@ def no_calibration(len_simul = 28, initial_law = np.ones(7)/7,
     history_probas = np.zeros((7, fi.shape[1] - 1))
     for t in range(fi.shape[1] - 1):
 
-        history_probas[:, t] = simul.filter_step(fi.iloc[:,t+1], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[future + t-1]), get_probas = True).flatten()
+        history_probas[:, t] = simul.filter_step(fi.iloc[:,t], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[future + t-1]), get_probas = True).flatten()
 
     return history_probas, simul
 
@@ -400,3 +400,5 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #probas_plot(path = "Data/history_intermediate.xlsx", output = "Figs/stackplots_intermediate.pdf")
 
+#%%
+a, b, c, d, e = comparison()
