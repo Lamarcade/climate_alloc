@@ -90,6 +90,9 @@ class Modelnu():
         
         df_merged = sectors.merge(df, on=["Instrument", "GICS Sector Name"])
 
+        # Real Estate decarbonation rates have many outliers
+        df_merged = df_merged[df_merged["GICS Sector Name"] != "Real Estate"]
+
         decarbonation_rates = {}
         
         for i in range(13, -1, -1):
@@ -103,7 +106,7 @@ class Modelnu():
         decarbonation_df = pd.DataFrame(decarbonation_rates)
         
         # Real Estate decarbonation rates have many outliers
-        decarbonation_df.drop("Real Estate", inplace = True)
+        #decarbonation_df.drop("Real Estate", inplace = True)
         
         self.indicators = decarbonation_df
         #print(sectors.columns)
