@@ -202,7 +202,7 @@ class Modelnu():
         self.mus.loc[:, rates.columns[2:date_max]] = rates 
         return scenar_dict
     
-    def get_simul_data(self, path = "Data/simul.xlsx", sheet = 0):
+    def get_simul_data(self, path = "Data/simul.xlsx", sheet = 0, complete_emissions = False):
         simul = pd.read_excel(path, sheet_name = sheet)
 
         # First columns are an index and NA values
@@ -228,7 +228,8 @@ class Modelnu():
         
         start_year = 2023
         
-        self.start_year = start_year
+        # Emissions start year
+        self.start_year = start_year-1
     
         simul_sorted = simul.sort_values(by=start_year, ascending=False)
         
@@ -319,10 +320,10 @@ class Modelnu():
         #print("Coeff", coeff)
         #wait = input("Enter")
         
-        # self.mus.iloc[scenar, t+1] =  mu is a single value
+        # self.mus.iloc[scenar, t] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
         
-        vector = (intensities - (self.mus.iloc[scenar, t+1] + np.concatenate([theta[2:1+n], [-np.sum(theta[2:1+n])]])))
+        vector = (intensities - (self.mus.iloc[scenar, t] + np.concatenate([theta[2:1+n], [-np.sum(theta[2:1+n])]])))
        # print("vector", vector)
 
         inside = -1/2 * vector.dot(inverse).dot(vector)
@@ -423,7 +424,7 @@ class Modelnu():
         self.history_marginal[self.history_count] = marginal
 
         self.probas = num/marginal
-        if self.history_count + self.start_year > 2023:
+        if self.history_count + self.start_year > 2023 and self.emissions.columns[-1] +1 < self.indicators.columns[-1] +1:
             self.update_emissions()
         #print(self.probas)
         if get_probas:
@@ -594,8 +595,8 @@ class Modelnu():
         '''
         expected_loglk = [0]
         loglk = [self.hist_log_lk()]
+        self.emissions_by_sectors()
         for l in range(n_iter):
-            self.emissions_by_sectors()
             if reset_probas:
                 self.probas = np.ones(len(self.mus))/len(self.mus)
                 self.probas = self.probas[:, np.newaxis]
@@ -614,8 +615,8 @@ class Modelnu():
                 print("emissions t = ", self.start_year + t)
                 # Update probabilities thanks to the filter
 
-                all_probas[:,t-1] = self.filter_step(full_intensities.iloc[:,t], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]), get_probas = True).flatten()
-                print("Probas",  all_probas[:, t-1])
+                all_probas[:,t] = self.filter_step(full_intensities.iloc[:,t], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]), get_probas = True).flatten()
+                print("Probas",  all_probas[:, t])
                 
                 print("Indicators time ", full_intensities.columns[t])
                 print("Decarbo rate ", self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]))

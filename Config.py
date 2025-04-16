@@ -30,5 +30,7 @@ INDEX2SCENAR = {0 : "Below 2°C", 1: "Current Policies", 2: "Delayed transition"
                6:"Net Zero 2050"}
 
 THREE_SCENAR = ["Current Policies", "Fragmented World", "Net Zero 2050"]
+INDEX3 = {0 : "Current Policies", 1: "Fragmented World", 2: "Net Zero 2050"}
+
 
  

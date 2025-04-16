@@ -12,6 +12,7 @@ import seaborn as sns
 import random as rd
 from scipy.stats import multivariate_normal, norm
 from matplotlib.backends.backend_pdf import PdfPages
+from math import inf
 
 import Config
 
@@ -19,7 +20,7 @@ import Config
 #%% 
 
 def full_process(initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), sheet = 0):
-    mm = Modelnu(41, initial_law = initial_law)
+    mm = Modelnu(42, initial_law = initial_law)
     mm.rename_rates()
     fi = mm.indicators
     p,q = fi.shape
@@ -29,20 +30,20 @@ def full_process(initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
     
     #nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
     
-    central_std = np.random.rand()
+    central_std = 10 * np.random.rand()
     beta = np.random.rand()
     
-    nus = np.random.dirichlet(np.ones(p))
+    nus = 10* np.random.dirichlet(np.ones(p))
 
-    nus -= 1/ p
-    sigmas = np.random.rand(p)
+    nus -= 10/ p
+    sigmas = 100* np.random.rand(p)
     
     mm.initialize_parameters(central_std, beta, nus, sigmas)
    
     dicti = mm.get_scenario_data()
     mm.get_simul_data(sheet = sheet)
     
-    elk, lk = mm.EM(mm.indicators, n_iter = 5)
+    elk, lk = mm.EM(mm.indicators, n_iter = 2)
     
     return mm, elk, lk, dicti
 
@@ -81,7 +82,7 @@ def comparison(initial_law = np.ones(7)/7, n_iter = 2):
 
 #%%  
 
-def calibrate_future_data(len_simul = 28, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
+def calibrate_future_data(len_simul = 29, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
                           future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx", 
                           sheet = 0, n_iter = 5):
     simul = Modelnu(len_simul, initial_law = initial_law)
@@ -90,13 +91,13 @@ def calibrate_future_data(len_simul = 28, initial_law = np.array([0.25, 0.1, 0.1
                                     sheet = sheet)
     fi = simul.indicators
     p,q = fi.shape
-    central_std = np.random.rand()
+    central_std = 10 * np.random.rand()
     beta = np.random.rand()
     
-    nus = np.random.dirichlet(np.ones(p))
+    nus = 10 * np.random.dirichlet(np.ones(p))
 
-    nus -= 1/ p
-    sigmas = np.random.rand(p)
+    nus -= 10/ p
+    sigmas = 10 * np.random.rand(p)
     
     simul.initialize_parameters(central_std, beta, nus, sigmas)
     simul.EM(simul.indicators, n_iter = n_iter) 
@@ -168,7 +169,7 @@ def verify_filter(fake_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_s
         
         probas = fake_simul.filter_step(fi.iloc[:,t+1], fake_simul.compute_mean_rates(fi.iloc[:,t], fake_simul.emissions[future + t-1]), get_probas = True)
         full_probas.iloc[:, t] = np.array(probas).reshape(-1)  
-    return fake_simul, full_probas
+    return full_probas, fake_simul
 
 #%% Assess probabilities with no calibration
 ###### OBSOLETE
@@ -189,18 +190,26 @@ def all_probas(future_path = "Data/fixed_params.xlsx"):
 
 #%%
 
-def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Data/history_nocalib.xlsx"):
+def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Data/history_nocalib.xlsx", fake = False):
     future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
     
     for sheet in params_scenars:
-        all_probas, simul = no_calibration(sheet = sheet, future_path = future_path)
+        if fake:
+            all_probas, simul = verify_filter(fake_path = future_path, scenar_path = "Data/fake_scenarios.xlsx", sheet = sheet)
+            col_years = range(all_probas.shape[1])
+        else:
+            all_probas, simul = no_calibration(sheet = sheet, future_path = future_path)
+            col_years = range(2024, 2051)
   
-        scenario_df = pd.DataFrame(all_probas, columns = range(2024, 2051))
+        scenario_df = pd.DataFrame(all_probas, columns = col_years)
     
         # Scenario names
-        scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
+        if fake:
+            scenario_df.index = [Config.INDEX3[i] for i in scenario_df.index]
+        else:
+            scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
     
         with pd.ExcelWriter(output, mode='a', if_sheet_exists = "overlay") as writer:  
             scenario_df.to_excel(writer, sheet_name = sheet)
@@ -259,11 +268,12 @@ def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7,
 
 #%% All probabilities histories with calibration
 
-def best_model_probas(len_simul = 28, initial_law = np.ones(7)/7, 
+def best_model_probas(len_simul = 29, initial_law = np.ones(7)/7, 
                           future_path = "Data/full_fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
-                          sheet = 0, n_iter = 3, n_models = 5):
+                          sheet = 0, n_iter = 3, n_models = 2):
     
-    best_lk = 0
+    best_lk = -inf
+    best_model = None
     for i in range(n_models):
         simul = Modelnu(len_simul, initial_law = initial_law)
         simul.get_future_data_only(future_path, 
@@ -282,6 +292,8 @@ def best_model_probas(len_simul = 28, initial_law = np.ones(7)/7,
         simul.initialize_parameters(central_std, beta, nus, sigmas)
         elk, lk, all_probas = simul.EM(simul.indicators, n_iter = n_iter, get_all_probas = True) 
         
+        print("elk ", elk)
+        print("lk ", lk)
         if lk[-1] > best_lk:
             best_lk = lk[-1]
             best_model = simul
@@ -346,6 +358,10 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #%% Tests
 
+#a, b, c, d = full_process()
+
+#bm, bp = best_model_probas()
+
 # =============================================================================
 # simul = calibrate_future_data(len(Config.MUS_NZ), initial_law = np.array([0.5, 0.3, 0.2]))
 # 
@@ -400,14 +416,18 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #probas_plot(path = "Data/history_intermediate.xlsx", output = "Figs/stackplots_intermediate.pdf")
 
+###
+#fake_simul = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
+#probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf")
+
 #%%
-a, b, c, d, e = comparison()
-theta = a.theta
+# a, b, c, d, e = comparison()
+# theta = a.theta
 
-params = ["central_var", "beta"]
-params_nu = [f'nu_{i}' for i in range(1, 10)]
-params_sigma = [f'var_{i}' for i in range(1, 11)]
-indexed = params + params_nu + params_sigma
+# params = ["central_var", "beta"]
+# params_nu = [f'nu_{i}' for i in range(1, 10)]
+# params_sigma = [f'var_{i}' for i in range(1, 11)]
+# indexed = params + params_nu + params_sigma
 
-theta_df = pd.DataFrame(theta)
-theta_df.index = indexed
+# theta_df = pd.DataFrame(theta)
+# theta_df.index = indexed
