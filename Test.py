@@ -112,7 +112,7 @@ sigmas = Config.SIGMAS
 future = Config.FUTURE_START_YEAR
 
 #%% 
-def no_calibration(len_simul = 28, initial_law = np.ones(7)/7, 
+def no_calibration(len_simul = 29, initial_law = np.ones(7)/7, 
                    future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx",
                    sheet = 0):
     simul = Modelnu(len_simul, initial_law = initial_law)
@@ -125,8 +125,8 @@ def no_calibration(len_simul = 28, initial_law = np.ones(7)/7,
     simul.initialize_parameters(central_std, beta, nus, sigmas)
     simul.history_count = 0
     
-    history_probas = np.zeros((7, fi.shape[1] - 1))
-    for t in range(fi.shape[1] - 1):
+    history_probas = np.zeros((7, fi.shape[1]))
+    for t in range(fi.shape[1]):
 
         history_probas[:, t] = simul.filter_step(fi.iloc[:,t], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[future + t-1]), get_probas = True).flatten()
 
@@ -151,7 +151,7 @@ def plot_params(model, theoretical):
 #%% Filter with ideal parameters
 
 def verify_filter(fake_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx", sheet = 0):
-    fake_simul = Modelnu(len(Config.MUS_NZ), initial_law = np.array([0.34, 0.33, 0.33]))
+    fake_simul = Modelnu(len(Config.MUS_NZ) +1, initial_law = np.array([0.34, 0.33, 0.33]))
     
     # Sheets
     # 1 : NZ 2:CurPo 3: FW
@@ -163,11 +163,11 @@ def verify_filter(fake_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_s
     
     fake_simul.initialize_parameters(central_std, beta, nus, sigmas)
     
-    full_probas = pd.DataFrame(np.zeros((3, fi.shape[1] - 1)))
-    for t in range(fi.shape[1] - 1):
+    full_probas = pd.DataFrame(np.zeros((3, fi.shape[1])))
+    for t in range(fi.shape[1]):
         # Update probabilities thanks to the filter
         
-        probas = fake_simul.filter_step(fi.iloc[:,t+1], fake_simul.compute_mean_rates(fi.iloc[:,t], fake_simul.emissions[future + t-1]), get_probas = True)
+        probas = fake_simul.filter_step(fi.iloc[:,t], fake_simul.compute_mean_rates(fi.iloc[:,t], fake_simul.emissions[future + t-1]), get_probas = True)
         full_probas.iloc[:, t] = np.array(probas).reshape(-1)  
     return full_probas, fake_simul
 
@@ -201,7 +201,7 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
             col_years = range(Config.FUTURE_START_YEAR, Config.FUTURE_START_YEAR + all_probas.shape[1])
         else:
             all_probas, simul = no_calibration(sheet = sheet, future_path = future_path)
-            col_years = range(2024, 2051)
+            col_years = range(Config.FUTURE_START_YEAR, 2051)
   
         scenario_df = pd.DataFrame(all_probas)
         scenario_df.columns = col_years
@@ -278,17 +278,17 @@ def best_model_probas(len_simul = 29, initial_law = np.ones(7)/7,
     for i in range(n_models):
         simul = Modelnu(len_simul, initial_law = initial_law)
         simul.get_future_data_only(future_path, 
-                                        scenar_path = "Data/scenarios.xlsx", 
+                                        scenar_path = scenar_path, 
                                         sheet = sheet)
         fi = simul.indicators
         p,q = fi.shape
-        central_std = np.random.rand()
+        central_std = 10 * np.random.rand()
         beta = np.random.rand()
         
-        nus = np.random.dirichlet(np.ones(p))
+        nus = 10 * np.random.dirichlet(np.ones(p))
     
-        nus -= 1/ p
-        sigmas = np.random.rand(p)
+        nus -= 10/ p
+        sigmas = 100 * np.random.rand(p)
         
         simul.initialize_parameters(central_std, beta, nus, sigmas)
         elk, lk, all_probas = simul.EM(simul.indicators, n_iter = n_iter, get_all_probas = True) 
@@ -302,19 +302,32 @@ def best_model_probas(len_simul = 29, initial_law = np.ones(7)/7,
             
     return best_model, best_probas
 
-def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", output = "Data/history_calib.xlsx"):
+def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx",
+                             output = "Data/history_calib.xlsx",
+                             len_simul = 29, initial_law = np.ones(7)/7,
+                             n_iter = 3, n_models = 2, fake = False):
     future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
     
     for sheet in params_scenars:
         print("Now calibrating with scenario ", sheet)
-        best_model, all_probas = best_model_probas(sheet = sheet, future_path = future_path)
-  
-        scenario_df = pd.DataFrame(all_probas, columns = range(2024, 2051))
+        best_model, all_probas = best_model_probas(len_simul = len_simul, initial_law = initial_law,
+                                                   future_path = future_path, scenar_path = scenar_path,
+                                                   sheet = sheet, n_iter = n_iter, n_models = n_models)
+        if fake:
+            col_years = range(Config.FUTURE_START_YEAR, Config.FUTURE_START_YEAR + all_probas.shape[1])
+        else:
+            col_years = range(Config.FUTURE_START_YEAR, 2051)
+        
+        scenario_df = pd.DataFrame(all_probas)
+        scenario_df.columns = col_years
     
         # Scenario names
-        scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
+        if fake:
+            scenario_df.index = [Config.INDEX3[i] for i in scenario_df.index]
+        else:
+            scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
     
         with pd.ExcelWriter(output, mode='a', if_sheet_exists = "overlay") as writer:  
             scenario_df.to_excel(writer, sheet_name = sheet)
@@ -442,5 +455,19 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 # =============================================================================
 
 #%% Test 1
-fake_simul = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
-probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
+
+#all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
+#probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
+
+#%% Test 2
+
+#all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
+#                             output = "Data/fake_calib.xlsx",
+#                             len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
+#                             n_iter = 3, n_models = 2, fake = True)
+#probas_plot(path = "Data/fake_calib.xlsx", output = "Figs/fake_stackplots_calib.pdf", focus = 30)
+
+#%% Test 3
+
+#all_probas_history(future_path = "Data/full_fixed_params.xlsx")
+#probas_plot()
