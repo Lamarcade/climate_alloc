@@ -256,18 +256,19 @@ for scenar_used in ["Optimistic", "Pessimistic", "Middle"]:
    
 #%% Simulate fake scenarios
 
+start = Config.FUTURE_START_YEAR
 fake_mus = final_df.loc[three_scenar].copy()
 
-end = 2021 + len(Config.MUS_NZ)
+end = start + len(Config.MUS_NZ)
 
 new_columns = pd.DataFrame(0.0, index=fake_mus.index, columns=range(2051, end))
 
 fake_mus = pd.concat([fake_mus, new_columns], axis=1)
 
     
-fake_mus.loc["Current Policies", 2021:] = Config.MUS_CURPO
-fake_mus.loc["Fragmented World", 2021:] = Config.MUS_FW
-fake_mus.loc["Net Zero 2050", 2021:] = Config.MUS_NZ
+fake_mus.loc["Current Policies", start:] = Config.MUS_CURPO
+fake_mus.loc["Fragmented World", start:] = Config.MUS_FW
+fake_mus.loc["Net Zero 2050", start:] = Config.MUS_NZ
 
 with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
     fake_mus.to_excel(fake_writer)

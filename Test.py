@@ -151,7 +151,7 @@ def plot_params(model, theoretical):
 #%% Filter with ideal parameters
 
 def verify_filter(fake_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx", sheet = 0):
-    fake_simul = Modelnu(len(Config.MUS_NZ), initial_law = np.array([0.5, 0.3, 0.2]))
+    fake_simul = Modelnu(len(Config.MUS_NZ), initial_law = np.array([0.34, 0.33, 0.33]))
     
     # Sheets
     # 1 : NZ 2:CurPo 3: FW
@@ -198,12 +198,13 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
     for sheet in params_scenars:
         if fake:
             all_probas, simul = verify_filter(fake_path = future_path, scenar_path = "Data/fake_scenarios.xlsx", sheet = sheet)
-            col_years = range(all_probas.shape[1])
+            col_years = range(Config.FUTURE_START_YEAR, Config.FUTURE_START_YEAR + all_probas.shape[1])
         else:
             all_probas, simul = no_calibration(sheet = sheet, future_path = future_path)
             col_years = range(2024, 2051)
   
-        scenario_df = pd.DataFrame(all_probas, columns = col_years)
+        scenario_df = pd.DataFrame(all_probas)
+        scenario_df.columns = col_years
     
         # Scenario names
         if fake:
@@ -334,7 +335,7 @@ colors = {
     "NZ": "#e377c2",
 }
 
-def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_nocalib.pdf"):
+def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_nocalib.pdf", focus = None):
     future = pd.ExcelFile(path)
     
     scenars = future.sheet_names
@@ -345,16 +346,23 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
             plot_probas = probas.transpose()
 
             plot_probas.rename(columns = dict_abbrev, inplace = True)
-            year_sort = plot_probas.index[-1]
+            if focus is not None:
+                year_sort = plot_probas.index[focus]
+            else:
+                year_sort = plot_probas.index[-1]
             plot_probas = plot_probas[plot_probas.columns[plot_probas.loc[year_sort].argsort()[::-1]]]
             
             color_list = [colors[col] for col in plot_probas.columns if col in colors]
-            
-            plot_probas.plot.area(title = sheet, color = color_list)
+            if focus:
+                plot_probas.loc[:year_sort, :].plot.area(title = sheet, color = color_list)
+            else:
+                plot_probas.plot.area(title = sheet, color = color_list)
             plt.legend(loc = 'upper left')
             
             pdf.savefig()
             plt.close()
+
+        
 
 #%% Tests
 
@@ -421,12 +429,18 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 #probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf")
 
 #%%
-a, b, c, d, e = comparison()
-theta = a.theta
-params = ["central_var", "beta"]
-params_nu = [f'nu_{i}' for i in range(1, 10)]
-params_sigma = [f'var_{i}' for i in range(1, 11)]
-indexed = params + params_nu + params_sigma
+# =============================================================================
+# a, b, c, d, e = comparison()
+# theta = a.theta
+# params = ["central_var", "beta"]
+# params_nu = [f'nu_{i}' for i in range(1, 10)]
+# params_sigma = [f'var_{i}' for i in range(1, 11)]
+# indexed = params + params_nu + params_sigma
+# 
+# theta_df = pd.DataFrame(theta)
+# theta_df.index = indexed
+# =============================================================================
 
-theta_df = pd.DataFrame(theta)
-theta_df.index = indexed
+#%% Test 1
+fake_simul = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
+probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
