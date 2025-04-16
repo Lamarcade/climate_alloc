@@ -421,13 +421,12 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 #probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf")
 
 #%%
-# a, b, c, d, e = comparison()
-# theta = a.theta
+a, b, c, d, e = comparison()
+theta = a.theta
+params = ["central_var", "beta"]
+params_nu = [f'nu_{i}' for i in range(1, 10)]
+params_sigma = [f'var_{i}' for i in range(1, 11)]
+indexed = params + params_nu + params_sigma
 
-# params = ["central_var", "beta"]
-# params_nu = [f'nu_{i}' for i in range(1, 10)]
-# params_sigma = [f'var_{i}' for i in range(1, 11)]
-# indexed = params + params_nu + params_sigma
-
-# theta_df = pd.DataFrame(theta)
-# theta_df.index = indexed
+theta_df = pd.DataFrame(theta)
+theta_df.index = indexed

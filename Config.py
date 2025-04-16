@@ -6,10 +6,10 @@ Created on Mon Feb  3 17:23:29 2025
 """
 import numpy as np
 
-CENTRAL_STD = 5
+CENTRAL_STD = 10
 BETA = 0.1
 NUS = np.array([2, -3, 1, -0.5, 1.5, -1.0, -1.5, 3.0, -1.0, -0.5])*1
-SIGMAS = 1 * np.ones(len(NUS))
+SIGMAS = 100 * np.ones(len(NUS))
 
 N_YEARS = 500
 FUTURE_START_YEAR = 2023
