@@ -80,6 +80,28 @@ def comparison(initial_law = np.ones(7)/7, n_iter = 2):
     
     return mm, elk, lk, dicti, probas
 
+def best_past(n_iter = 3, n_models = 2): 
+    best_lk = -inf
+    best_model = None
+    
+    for i in range(n_models):
+        simul, elk, lk, dicti, probas = comparison(n_iter = n_iter)
+        
+        print("elk ", elk)
+        print("lk ", lk)
+        if lk[-1] > best_lk:
+            best_lk = lk[-1]
+            best_model = simul
+            best_probas = probas
+            
+    col_years = range(Config.START_YEAR, 2023)
+    scenario_df = pd.DataFrame(best_probas)
+    scenario_df.columns = col_years
+
+    scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
+    return(best_model, scenario_df)        
+
+
 #%%  
 
 def calibrate_future_data(len_simul = 29, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
@@ -194,6 +216,7 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
     future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
+    models = []
     
     for sheet in params_scenars:
         if fake:
@@ -214,6 +237,10 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
     
         with pd.ExcelWriter(output, mode='a', if_sheet_exists = "overlay") as writer:  
             scenario_df.to_excel(writer, sheet_name = sheet)
+            
+        models.append(simul)
+            
+    return params_scenars, models
             
 
 #%% Randomly initialize different models and keep the best one
@@ -309,6 +336,7 @@ def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar
     future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
+    models = []
     
     for sheet in params_scenars:
         print("Now calibrating with scenario ", sheet)
@@ -331,6 +359,11 @@ def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar
     
         with pd.ExcelWriter(output, mode='a', if_sheet_exists = "overlay") as writer:  
             scenario_df.to_excel(writer, sheet_name = sheet)
+            
+        models.append(best_model)
+        
+    return params_scenars, models
+        
 #%% Stackplot
 
 dict_abbrev = {"Below 2°C": "B2°", "Current Policies" : "CurPo", "Delayed transition" : "Delay",
@@ -374,6 +407,36 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
             
             pdf.savefig()
             plt.close()
+
+#%% Models evaluation
+
+def compare(simul):
+    #See which theoretical nu corresponds to which sector
+    mapping = simul.index_mapping
+    
+    nus_df = pd.DataFrame({"nus": nus, "sigmas":sigmas})
+    
+    # See which sector corresponds to which theta
+    theta_mapping = {sec:i for i, sec in enumerate(simul.indicators.index)}
+    
+    # Map from theoretical nu to optimized nu in theta
+    nus_df.index = nus_df.index.map(mapping).map(theta_mapping)
+    nus_df.sort_index(inplace = True)
+    nus_sector_order = nus_df["nus"].values[:-1]
+    sigmas_sector_order = nus_df["sigmas"].values
+    
+    theoretical_params = np.concatenate([np.array([central_std, beta]), nus_sector_order, sigmas_sector_order])
+    
+    params_index = pd.Index(["Central_std", "Beta"]).union(simul.indicators.index[:-1], sort = False).union(pd.Index([val +"_std" for val in simul.indicators.index.values]), sort = False)
+    params_df = pd.DataFrame(theoretical_params, columns = ["Theoretical"], index = params_index)
+    params_df["Simulation"] = simul.theta
+    return params_df
+
+def likelihoods(models, params_scenars):
+    lks = []
+    for model in models:
+        lks.append(model.hist_log_lk())
+    return(pd.DataFrame(lks, columns = ["LogLK"], index = params_scenars))
 
         
 
@@ -456,12 +519,12 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #%% Test 1
 
-#all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
+#params_scenars, models = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
 #probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
 
 #%% Test 2
 
-#all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
+#params_scenars, models = all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
 #                             output = "Data/fake_calib.xlsx",
 #                             len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
 #                             n_iter = 3, n_models = 2, fake = True)
@@ -469,5 +532,24 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
 
 #%% Test 3
 
-#all_probas_history(future_path = "Data/full_fixed_params.xlsx")
+#params_scenars, models = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
 #probas_plot()
+
+#%% Test 4
+
+#params_scenars, models = all_probas_history_calib(n_iter = 3, n_models = 2)
+#probas_plot(path = "Data/history_calib.xlsx", output = "Figs/stackplots_calib.pdf")
+
+#%% Test 5 
+#scen, models = all_probas_history(future_path = "Data/intermediate.xlsx", output = "Data/intermediate_nocalib.xlsx")
+#probas_plot(path = "Data/intermediate_nocalib.xlsx", output = "Figs/intermediate_stackplots_nocalib.pdf")
+
+#params_scenars, models_c = all_probas_history_calib(future_path = "Data/intermediate.xlsx", output = "Data/intermediate_calib.xlsx")
+#probas_plot(path = "Data/intermediate_calib.xlsx", output = "Figs/intermediate_stackplots_calib.pdf")
+
+#params_middle = compare(models_c[2])
+#lks = likelihoods(models_c, params_scenars)
+
+#%% Test 7
+
+# model, calib = best_past()

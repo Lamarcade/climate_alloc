@@ -603,7 +603,7 @@ class Modelnu():
             # E step
             if l > 0:
                 expected_loglk.append(self.log_lk(self.theta, self.pi, full_intensities))
-            print("Q1 + Q2 =", expected_loglk[l])
+            #print("Q1 + Q2 =", expected_loglk[l])
             
             # Reset time, which is updated at every filter step 
             
@@ -611,22 +611,22 @@ class Modelnu():
                 
             self.history_count = 0
             for t in range(full_intensities.shape[1]):
-                print("t = ", t)
-                print("emissions t = ", self.start_year + t)
+                #print("t = ", t)
+                #print("emissions t = ", self.start_year + t)
                 # Update probabilities thanks to the filter
 
                 all_probas[:,t] = self.filter_step(full_intensities.iloc[:,t], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]), get_probas = True).flatten()
-                print("Probas",  all_probas[:, t])
+                #print("Probas",  all_probas[:, t])
                 
-                print("Indicators time ", full_intensities.columns[t])
-                print("Decarbo rate ", self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]))
+                #print("Indicators time ", full_intensities.columns[t])
+                #print("Decarbo rate ", self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]))
             
             # M step: Update theta and pi
             self.M_step(full_intensities)
             #self.probas = self.pi
             loglk.append(self.hist_log_lk())
 
-        print("Final Q1+Q2 =",self.log_lk(self.theta, self.pi, full_intensities))
+        #print("Final Q1+Q2 =",self.log_lk(self.theta, self.pi, full_intensities))
         print("Q1 + Q2 history :", expected_loglk)
         if get_all_probas:
             return expected_loglk, loglk, all_probas
