@@ -102,30 +102,6 @@ def best_past(n_iter = 3, n_models = 2):
     scenario_df.index = [Config.INDEX2SCENAR[i] for i in scenario_df.index]
     return(best_model, scenario_df)        
 
-
-#%%  
-
-def calibrate_future_data(len_simul = 29, initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
-                          future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx", 
-                          sheet = 0, n_iter = 5):
-    simul = Modelnu(len_simul, initial_law = initial_law)
-    simul.get_future_data_only(future_path, 
-                                    scenar_path = "Data/fake_scenarios.xlsx", 
-                                    sheet = sheet)
-    fi = simul.indicators
-    p,q = fi.shape
-    central_std = 10 * np.random.rand()
-    beta = np.random.rand()
-    
-    nus = 10 * np.random.dirichlet(np.ones(p))
-
-    nus -= 10/ p
-    sigmas = 10 * np.random.rand(p)
-    
-    simul.initialize_parameters(central_std, beta, nus, sigmas)
-    simul.EM(simul.indicators, n_iter = n_iter) 
-    return simul
-
 #%% Theoretical values 
 central_std = Config.CENTRAL_STD
 beta = Config.BETA
@@ -134,7 +110,7 @@ sigmas = Config.SIGMAS
 
 future = Config.FUTURE_START_YEAR
 
-#%% 
+#%% Verify filter on true scenarios
 def no_calibration(len_simul = 29, initial_law = np.ones(7)/7, 
                    future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx",
                    sheet = 0):
@@ -154,22 +130,6 @@ def no_calibration(len_simul = 29, initial_law = np.ones(7)/7,
         history_probas[:, t] = simul.filter_step(fi.iloc[:,t], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[future + t-1]), get_probas = True).flatten()
 
     return history_probas, simul
-
-#%%
-def plot_params(model, theoretical):
-    
-    ax = plt.gca()
-    ax.set_aspect('equal', adjustable='box')
-    plt.scatter(theoretical, model.theta)
-    #plt.yscale('log')
-    #plt.xscale('log')
-    
-    plt.xlim(-0.4, 0.4)
-    plt.ylim(-0.4, 0.4)
-    
-    plt.plot()
-    
-#plot_params(simul, theoretical_params)
 
 #%% Filter with ideal parameters
 
@@ -194,24 +154,7 @@ def verify_filter(fake_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_s
         full_probas.iloc[:, t] = np.array(probas).reshape(-1)  
     return full_probas, fake_simul
 
-#%% Assess probabilities with no calibration
-###### OBSOLETE
-
-def all_probas(future_path = "Data/fixed_params.xlsx"):
-    no_calib = pd.DataFrame()
-    future = pd.ExcelFile(future_path)
-    
-    params_scenars = future.sheet_names
-    
-    for sheet in params_scenars:
-        probas, simul = no_calibration(sheet = sheet, future_path = future_path)
-        no_calib[sheet] = probas.flatten()
-        
-    # Scenario names
-    no_calib.index = [Config.INDEX2SCENAR[i] for i in no_calib.index]
-    return(no_calib)
-
-#%%
+#%% History of filter probabilities with ideal parameters
 
 def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Data/history_nocalib.xlsx", fake = False):
     future = pd.ExcelFile(future_path)
@@ -242,58 +185,6 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
         models.append(simul)
             
     return params_scenars, models
-            
-
-#%% Randomly initialize different models and keep the best one
-#### OBSOLETE
-
-def best_model_future_data(len_simul = 28, initial_law = np.ones(7)/7, 
-                          future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
-                          sheet = 0, n_iter = 3, n_models = 5):
-    
-    best_lk = 0
-    for i in range(n_models):
-        simul = Modelnu(len_simul, initial_law = initial_law)
-        simul.get_future_data_only(future_path, 
-                                        scenar_path = "Data/scenarios.xlsx", 
-                                        sheet = sheet)
-        fi = simul.indicators
-        p,q = fi.shape
-        central_std = np.random.rand()
-        beta = np.random.rand()
-        
-        nus = np.random.dirichlet(np.ones(p))
-    
-        nus -= 1/ p
-        sigmas = np.random.rand(p)
-        
-        simul.initialize_parameters(central_std, beta, nus, sigmas)
-        elk, lk = simul.EM(simul.indicators, n_iter = n_iter) 
-        
-        if lk[-1] > best_lk:
-            best_lk = lk[-1]
-            best_model = simul
-            
-    return best_model, elk, lk
-
-#%%
-
-def all_probas_calibration(len_simul = 28, initial_law = np.ones(7)/7, 
-                          future_path = "Data/full_fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
-                          n_iter = 3, n_models = 5):
-    calib = pd.DataFrame()
-    future = pd.ExcelFile(future_path)
-    
-    params_scenars = future.sheet_names
-    
-    for sheet in params_scenars:
-        print("Now calibrating with scenario ", sheet)
-        model, elk, lk = best_model_future_data(len_simul, initial_law, future_path, scenar_path, sheet = sheet, n_iter = n_iter, n_models = n_models)
-        calib[sheet] = model.probas.flatten()
-        
-    # Scenario names
-    calib.index = [Config.INDEX2SCENAR[i] for i in calib.index]
-    return(calib)
 
 #%% All probabilities histories with calibration
 
@@ -473,70 +364,6 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
     plt.grid(True)
     plt.show()    
 
-#%% Tests
-
-#a, b, c, d = full_process()
-
-#bm, bp = best_model_probas()
-
-# =============================================================================
-# simul = calibrate_future_data(len(Config.MUS_NZ), initial_law = np.array([0.5, 0.3, 0.2]))
-# 
-# # See which theoretical nu corresponds to which sector
-# mapping = simul.index_mapping
-# 
-# nus_df = pd.DataFrame({"nus": nus, "sigmas":sigmas})
-# 
-# # See which sector corresponds to which theta
-# theta_mapping = {sec:i for i, sec in enumerate(simul.indicators.index)}
-# 
-# # Map from theoretical nu to optimized nu in theta
-# nus_df.index = nus_df.index.map(mapping).map(theta_mapping)
-# nus_df.sort_index(inplace = True)
-# nus_sector_order = nus_df["nus"].values[:-1]
-# sigmas_sector_order = nus_df["sigmas"].values
-# 
-# theoretical_params = np.concatenate([np.array([central_std, beta]), nus_sector_order, sigmas_sector_order])
-# 
-# params_index = pd.Index(["Central_std", "Beta"]).union(simul.indicators.index[:-1], sort = False).union(pd.Index([val +"_std" for val in simul.indicators.index.values]), sort = False)
-# params_df = pd.DataFrame(theoretical_params, index = params_index)
-# =============================================================================
-
-#mm, elk, lk, dicti = comparison()
-
-#probas, mm = no_calibration()
-
-#%%
-#no_calib = all_probas(future_path = "Data/full_fixed_params.xlsx")
-
-#no_calib.to_excel("Data/probas_comparison.xlsx", sheet_name = "No calibration")
-
-#with pd.ExcelWriter('Data/full_probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
-#    no_calib.to_excel(writer, sheet_name = "No calibration")
-
-#calib = all_probas_calibration(future_path = "Data/full_fixed_params.xlsx")
-
-#with pd.ExcelWriter('Data/full_probas_comparison.xlsx', mode='a', if_sheet_exists = "overlay") as writer: 
-#    calib.to_excel(writer, sheet_name = "Calibration")
-
-#%% Evolution of probas
-
-#simul = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
-#probas_plot()
-
-#all_probas_history_calib(output= "Data/history_calib2.xlsx")
-#probas_plot(path = "Data/history_calib2.xlsx", output = "Figs/stackplots_calib.pdf")
-
-# With intermediate scenarios
-
-#no_calib = all_probas_history(future_path = "Data/intermediate.xlsx", output = "Data/history_intermediate.xlsx")
-
-#probas_plot(path = "Data/history_intermediate.xlsx", output = "Figs/stackplots_intermediate.pdf")
-
-###
-#fake_simul = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
-#probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf")
-
 #%%
 # =============================================================================
 # a, b, c, d, e = comparison()
@@ -583,9 +410,9 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 #params_middle = compare(models_c[2])
 #lks = likelihoods(models_c, params_scenars)
 
+#calibration_effect(calib_path="Data/intermediate_calib.xlsx", nocalib_path="Data/intermediate_nocalib.xlsx")
+
 #%% Test 7
 
 # model, calib = best_past()
 
-#%% 
-calibration_effect(calib_path="Data/intermediate_calib.xlsx", nocalib_path="Data/intermediate_nocalib.xlsx")
