@@ -13,6 +13,7 @@ import random as rd
 from scipy.stats import multivariate_normal, norm
 from matplotlib.backends.backend_pdf import PdfPages
 from math import inf
+from scipy.stats import entropy
 
 import Config
 
@@ -438,7 +439,39 @@ def likelihoods(models, params_scenars):
         lks.append(model.hist_log_lk())
     return(pd.DataFrame(lks, columns = ["LogLK"], index = params_scenars))
 
-        
+def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/history_nocalib.xlsx"):
+    calib = pd.ExcelFile(calib_path)
+    no_calib = pd.ExcelFile(nocalib_path)
+    scenars = calib.sheet_names
+
+    kl_dict = {}
+
+    for sheet in scenars:
+        cp = calib.parse(sheet, index_col=0)
+        ncp = no_calib.parse(sheet, index_col=0)
+
+        kld_values = {}
+        for col in cp.columns:
+            p = cp[col].values
+            q = ncp[col].values
+            kld_values[col] = entropy(p, q) 
+
+        kl_dict[sheet] = kld_values
+
+    kl_df = pd.DataFrame(kl_dict).T
+    kl_df = kl_df.T
+
+    plt.figure(figsize=(12, 6))
+    for scenar in kl_df.columns:
+        plt.plot(kl_df.index, kl_df[scenar], label=scenar)
+
+    plt.title("KL-divergence between calibration and no calibration", fontsize=14)
+    plt.xlabel("Year")
+    plt.ylabel("KL Divergence")
+    plt.legend(title="Scenario", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.grid(True)
+    plt.show()    
 
 #%% Tests
 
@@ -553,3 +586,6 @@ def likelihoods(models, params_scenars):
 #%% Test 7
 
 # model, calib = best_past()
+
+#%% 
+calibration_effect(calib_path="Data/intermediate_calib.xlsx", nocalib_path="Data/intermediate_nocalib.xlsx")
