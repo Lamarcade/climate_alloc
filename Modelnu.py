@@ -253,6 +253,23 @@ class Modelnu():
         
         self.indicators = pd.concat([self.indicators, simul_sorted.loc[:, simul_sorted.columns[1:]]], axis=1)
         
+    def future_data_df(self, simul_df, scenar_df, date_max=2051):
+        start_year = 2023
+        self.start_year = start_year - 1
+        
+        simul_sorted = simul_df.sort_values(by=start_year, ascending=False)
+        
+        self.mus = scenar_df.copy()
+        self.mus = self.mus.loc[:, scenar_df.columns[2:date_max]]
+        
+        histo_means = self.indicators.mean(axis=1)
+        histo_order = histo_means.sort_values(ascending=False).index
+        self.index_mapping = dict(zip(simul_sorted.index, histo_order))
+        
+        simul_sorted.index = histo_order
+        self.indicators = self.indicators.iloc[:, :0]
+        self.indicators = pd.concat([self.indicators, simul_sorted.iloc[:, 1:]], axis=1)
+        
     def emissions_by_sectors(self):
         self.emissions = self.df[[f"Scope12 Y-{i}" for i in range(14, -1, -1)] + ["GICS Sector Name"]].groupby(by = "GICS Sector Name").sum()
         for i in range(14, -1, -1):
@@ -339,9 +356,37 @@ class Modelnu():
             #print(np.log(coeff) + inside)
             return(coeff * np.exp(inside))
  
-# intensities = self.df.loc[:,self.history_count + 1]
-# previous_intensity = self.df.loc[:,self.history_count].mean(axis = 0)
-# If history count is 0 need to add historical data
+    def explicit_density(self, theta, intensities, previous_intensity, scenar, t, is_log=False):
+        intensities = np.asarray(intensities)
+        mu = self.mus.iloc[scenar, t]
+    
+        n = len(intensities)
+    
+        cov = theta[0] + theta[1] * (previous_intensity - mu)**2
+    
+        # Weights (diagonal elements of D)
+        d = theta[1 + n:]
+        d_inv = 1 / d
+        denom = 1 + cov * np.sum(d_inv)
+    
+        nu = np.concatenate([theta[2:1 + n], [-np.sum(theta[2:1 + n])]])
+    
+        vector = intensities - (mu + nu)
+    
+        # Compute inverse efficiently using Sherman-Morrison-like identity
+        weighted = vector * d_inv
+        weighted_sum = np.sum(weighted)
+        quad_form = (1 / cov) * (np.dot(weighted, vector) - (cov * weighted_sum**2) / denom)
+    
+        # Determinant
+        det = np.prod(d) * denom
+        log_det = np.sum(np.log(d)) + np.log(denom)
+    
+        # Log density
+        log_coeff = -0.5 * (n * np.log(2 * np.pi) + log_det)
+        log_density = log_coeff - 0.5 * quad_form
+    
+        return log_density if is_log else np.exp(log_density)
  
     def full_density(self, theta, intensities, previous_intensity, t, is_log = False):
         '''
@@ -370,15 +415,6 @@ class Modelnu():
             # Scenario j
             density[j] = self.explicit_density(theta, intensities, previous_intensity, j, t, is_log)
         self.density = density
-# =============================================================================
-#         if t == 38:
-#             print("densities at time 38", density)
-#             
-#             print("intensities", intensities)
-#             print("mus", self.mus.iloc[:, t])
-#             print()
-#             wait = input("Enter")
-# =============================================================================
         
         # Put the densities as a column matrix
         return(self.density[:, np.newaxis])

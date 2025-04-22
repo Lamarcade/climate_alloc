@@ -176,29 +176,35 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
 
 #%% All probabilities histories with calibration
 
-def single_model_run(i, len_simul, initial_law, future_path, scenar_path, sheet, n_iter):
+def single_model_run(i, len_simul, initial_law, future_df, scenar_df, n_iter):
     from Modelnu import Modelnu
     import numpy as np
+    import tempfile, joblib
 
     simul = Modelnu(len_simul, initial_law=initial_law)
-    simul.get_future_data_only(future_path, scenar_path=scenar_path, sheet=sheet)
+    simul.future_data_df(future_df, scenar_df)
     fi = simul.indicators
     p, q = fi.shape
 
     simul = input_params(simul)
     elk, lk, all_probas = simul.EM(simul.indicators, n_iter=n_iter, get_all_probas=True)
 
-    return lk[-1], simul, all_probas
+    tmp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".pkl")
+    joblib.dump(simul, tmp_file.name)
+
+    return lk[-1], tmp_file.name, all_probas
 
 def best_model_parallel(len_simul=29, initial_law=np.ones(7)/7,
-                      future_path="Data/full_fixed_params.xlsx", scenar_path="Data/scenarios.xlsx",
-                      sheet=0, n_iter=3, n_models=16, n_jobs=16):
+                      future_df=None, scenar_df=None,
+                      sheet=None, n_iter=3, n_models=16, n_jobs=16):
 
     results = []
     with ProcessPoolExecutor(max_workers=n_jobs) as executor:
-        futures = [executor.submit(single_model_run, i, len_simul, initial_law,
-                                   future_path, scenar_path, sheet, n_iter)
-                   for i in range(n_models)]
+        futures = [
+            executor.submit(single_model_run, i, len_simul, initial_law,
+                            future_df, scenar_df, n_iter)
+            for i in range(n_models)
+        ]
         
         for f in tqdm(futures, desc=f"Running models for '{sheet}'", unit="model", dynamic_ncols=True):
             try:
@@ -241,16 +247,23 @@ def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar
                              output = "Data/parallel_calib.xlsx",
                              len_simul = 29, initial_law = np.ones(7)/7,
                              n_iter = 3, n_models = 16, fake = False):
-    future = pd.ExcelFile(future_path)
+    future_file = pd.ExcelFile(future_path)
+    scenar_df = pd.read_excel(scenar_path)
+
+    future_data_dict = {sheet: future_file.parse(sheet) for sheet in future_file.sheet_names}
+    params_scenars = list(future_data_dict.keys())
     
-    params_scenars = future.sheet_names
     models = []
     
-    for sheet in params_scenars:
+    for sheet in tqdm(params_scenars, desc="Calibrating all scenarios"):
         print("Now calibrating with scenario ", sheet)
-        best_model, all_probas, results = best_model_parallel(len_simul = len_simul, initial_law = initial_law,
-                                                   future_path = future_path, scenar_path = scenar_path,
-                                                   sheet = sheet, n_iter = n_iter, n_models = n_models)
+        future_df = future_data_dict[sheet]
+    
+        best_model, all_probas, results = best_model_parallel(
+            len_simul=len_simul, initial_law=initial_law,
+            future_df=future_df, scenar_df=scenar_df, sheet = sheet,
+            n_iter=n_iter, n_models=n_models
+        )
         if fake:
             col_years = range(Config.FUTURE_START_YEAR, Config.FUTURE_START_YEAR + all_probas.shape[1])
         else:
@@ -418,7 +431,7 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
 if __name__ == '__main__':
     freeze_support()
-    #params_scenars, models, res_last_scenar = all_probas_history_calib(n_iter = 3, n_models = 12)
+    params_scenars, models, res_last_scenar = all_probas_history_calib(n_iter = 3, n_models = 8)
     probas_plot(path = "Data/parallel_calib.xlsx", output = "Figs/parallel_stackplots_calib.pdf")
 
 #%% Test 5 
