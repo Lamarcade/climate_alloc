@@ -14,32 +14,35 @@ from scipy.stats import multivariate_normal, norm
 from matplotlib.backends.backend_pdf import PdfPages
 from math import inf
 from scipy.stats import entropy
+from concurrent.futures import ProcessPoolExecutor
+from multiprocessing import freeze_support
+from tqdm import tqdm
 
 import Config
 
 # Below 2, CurPo, Delayed, Fragmented, Low Dem, NDC, NZ
+
+#%%
+
+def input_params(simul):
+    
+    fi = simul.indicators
+    p,q = fi.shape
+    central_std = 10 * np.random.rand()
+    beta = np.random.rand()
+    nus = 10 * np.random.dirichlet(np.ones(p)) - 10 / p
+    sigmas = 100 * np.random.rand(p)
+    simul.initialize_parameters(central_std, beta, nus, sigmas)
+    return simul
+
 #%% 
 
 def full_process(initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), sheet = 0):
     mm = Modelnu(42, initial_law = initial_law)
     mm.rename_rates()
-    fi = mm.indicators
-    p,q = fi.shape
     
-    #nn = 0.05 * np.ones(p)
-    #nn[p//2:] -= 0.05 * np.ones(p - p//2)
+    mm = input_params(mm)
     
-    #nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
-    
-    central_std = 10 * np.random.rand()
-    beta = np.random.rand()
-    
-    nus = 10* np.random.dirichlet(np.ones(p))
-
-    nus -= 10/ p
-    sigmas = 100* np.random.rand(p)
-    
-    mm.initialize_parameters(central_std, beta, nus, sigmas)
    
     dicti = mm.get_scenario_data()
     mm.get_simul_data(sheet = sheet)
@@ -54,23 +57,8 @@ def full_process(initial_law = np.array([0.25, 0.1, 0.1, 0.2, 0.1, 0.1, 0.15]), 
 def comparison(initial_law = np.ones(7)/7, n_iter = 2):
     mm = Modelnu(15, initial_law = initial_law)
     mm.rename_rates()
-    fi = mm.indicators
-    p,q = fi.shape
     
-    #nn = 0.05 * np.ones(p)
-    #nn[p//2:] -= 0.05 * np.ones(p - p//2)
-    
-    #nn = [0.2, -0.3, 0.1, -0.05, 0.15, -0.1, -0.15, 0.3, -0.10, -0.05]
-    
-    central_std = 10 * np.random.rand()
-    beta = np.random.rand()
-    
-    nus = 10 * np.random.dirichlet(np.ones(p))
-
-    nus -= 10 * 1/ p
-    sigmas = 100 * np.random.rand(p)
-    
-    mm.initialize_parameters(central_std, beta, nus, sigmas)
+    mm = input_params(mm)
     
     dicti = mm.get_scenario_data(date_max = 2024)
     #mm.get_simul_data(sheet = sheet)
@@ -188,6 +176,43 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
 
 #%% All probabilities histories with calibration
 
+def single_model_run(i, len_simul, initial_law, future_path, scenar_path, sheet, n_iter):
+    from Modelnu import Modelnu
+    import numpy as np
+
+    simul = Modelnu(len_simul, initial_law=initial_law)
+    simul.get_future_data_only(future_path, scenar_path=scenar_path, sheet=sheet)
+    fi = simul.indicators
+    p, q = fi.shape
+
+    simul = input_params(simul)
+    elk, lk, all_probas = simul.EM(simul.indicators, n_iter=n_iter, get_all_probas=True)
+
+    return lk[-1], simul, all_probas
+
+def best_model_parallel(len_simul=29, initial_law=np.ones(7)/7,
+                      future_path="Data/full_fixed_params.xlsx", scenar_path="Data/scenarios.xlsx",
+                      sheet=0, n_iter=3, n_models=16, n_jobs=16):
+
+    results = []
+    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
+        futures = [executor.submit(single_model_run, i, len_simul, initial_law,
+                                   future_path, scenar_path, sheet, n_iter)
+                   for i in range(n_models)]
+        
+        for f in tqdm(futures, desc=f"Running models for '{sheet}'", unit="model", dynamic_ncols=True):
+            try:
+                lk, model, probas = f.result()
+                results.append((lk, model, probas))
+            except Exception as e:
+                print("Error in model run:", e)
+
+    if not results:
+        raise RuntimeError("No valid model was returned")
+
+    best_lk, best_model, best_probas = max(results, key=lambda x: x[0])
+    return best_model, best_probas, results
+
 def best_model_probas(len_simul = 29, initial_law = np.ones(7)/7, 
                           future_path = "Data/full_fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", 
                           sheet = 0, n_iter = 3, n_models = 2):
@@ -199,17 +224,8 @@ def best_model_probas(len_simul = 29, initial_law = np.ones(7)/7,
         simul.get_future_data_only(future_path, 
                                         scenar_path = scenar_path, 
                                         sheet = sheet)
-        fi = simul.indicators
-        p,q = fi.shape
-        central_std = 10 * np.random.rand()
-        beta = np.random.rand()
-        
-        nus = 10 * np.random.dirichlet(np.ones(p))
-    
-        nus -= 10/ p
-        sigmas = 100 * np.random.rand(p)
-        
-        simul.initialize_parameters(central_std, beta, nus, sigmas)
+
+        simul = input_params(simul)
         elk, lk, all_probas = simul.EM(simul.indicators, n_iter = n_iter, get_all_probas = True) 
         
         print("elk ", elk)
@@ -222,9 +238,9 @@ def best_model_probas(len_simul = 29, initial_law = np.ones(7)/7,
     return best_model, best_probas
 
 def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx",
-                             output = "Data/history_calib.xlsx",
+                             output = "Data/parallel_calib.xlsx",
                              len_simul = 29, initial_law = np.ones(7)/7,
-                             n_iter = 3, n_models = 2, fake = False):
+                             n_iter = 3, n_models = 16, fake = False):
     future = pd.ExcelFile(future_path)
     
     params_scenars = future.sheet_names
@@ -232,7 +248,7 @@ def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar
     
     for sheet in params_scenars:
         print("Now calibrating with scenario ", sheet)
-        best_model, all_probas = best_model_probas(len_simul = len_simul, initial_law = initial_law,
+        best_model, all_probas, results = best_model_parallel(len_simul = len_simul, initial_law = initial_law,
                                                    future_path = future_path, scenar_path = scenar_path,
                                                    sheet = sheet, n_iter = n_iter, n_models = n_models)
         if fake:
@@ -254,7 +270,7 @@ def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar
             
         models.append(best_model)
         
-    return params_scenars, models
+    return params_scenars, models, results
         
 #%% Stackplot
 
@@ -399,6 +415,11 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
 #params_scenars, models = all_probas_history_calib(n_iter = 3, n_models = 2)
 #probas_plot(path = "Data/history_calib.xlsx", output = "Figs/stackplots_calib.pdf")
+
+if __name__ == '__main__':
+    freeze_support()
+    #params_scenars, models, res_last_scenar = all_probas_history_calib(n_iter = 3, n_models = 12)
+    probas_plot(path = "Data/parallel_calib.xlsx", output = "Figs/parallel_stackplots_calib.pdf")
 
 #%% Test 5 
 #scen, models = all_probas_history(future_path = "Data/intermediate.xlsx", output = "Data/intermediate_nocalib.xlsx")
