@@ -61,7 +61,6 @@ def comparison(initial_law = np.ones(7)/7, n_iter = 2):
     mm = input_params(mm)
     
     dicti = mm.get_scenario_data(date_max = 2024)
-    #mm.get_simul_data(sheet = sheet)
     
     elk, lk, probas = mm.EM(mm.indicators, n_iter = n_iter, get_all_probas = True)
     
@@ -413,11 +412,13 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
 #%% Test 2
 
-#params_scenars, models = all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
+#if __name__ == '__main__':
+#    freeze_support()
+#    params_scenars, models, res = all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
 #                             output = "Data/fake_calib.xlsx",
 #                             len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
-#                             n_iter = 3, n_models = 2, fake = True)
-#probas_plot(path = "Data/fake_calib.xlsx", output = "Figs/fake_stackplots_calib.pdf", focus = 30)
+#                             n_iter = 3, n_models = 8, fake = True)
+#    probas_plot(path = "Data/fake_calib.xlsx", output = "Figs/fake_stackplots_calib.pdf", focus = 30)
 
 #%% Test 3
 
@@ -429,10 +430,10 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 #params_scenars, models = all_probas_history_calib(n_iter = 3, n_models = 2)
 #probas_plot(path = "Data/history_calib.xlsx", output = "Figs/stackplots_calib.pdf")
 
-if __name__ == '__main__':
-    freeze_support()
-    params_scenars, models, res_last_scenar = all_probas_history_calib(n_iter = 3, n_models = 8)
-    probas_plot(path = "Data/parallel_calib.xlsx", output = "Figs/parallel_stackplots_calib.pdf")
+#if __name__ == '__main__':
+#    freeze_support()
+#    params_scenars, models, res_last_scenar = all_probas_history_calib(n_iter = 3, n_models = 8)
+#    probas_plot(path = "Data/parallel_calib.xlsx", output = "Figs/parallel_stackplots_calib.pdf")
 
 #%% Test 5 
 #scen, models = all_probas_history(future_path = "Data/intermediate.xlsx", output = "Data/intermediate_nocalib.xlsx")

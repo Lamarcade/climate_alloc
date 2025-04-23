@@ -356,7 +356,7 @@ class Modelnu():
             #print(np.log(coeff) + inside)
             return(coeff * np.exp(inside))
  
-    def explicit_density(self, theta, intensities, previous_intensity, scenar, t, is_log=False):
+    def explicit_density_2(self, theta, intensities, previous_intensity, scenar, t, is_log=False):
         intensities = np.asarray(intensities)
         mu = self.mus.iloc[scenar, t]
     
@@ -387,6 +387,38 @@ class Modelnu():
         log_density = log_coeff - 0.5 * quad_form
     
         return log_density if is_log else np.exp(log_density)
+    
+    def explicit_density_vec(self, theta, intensities, previous_intensity, scenars, t, is_log):
+        n = len(intensities)
+        theta_shifts = theta[2:1+n]
+        last_component = -np.sum(theta_shifts)
+        theta_total = np.concatenate([theta_shifts, [last_component]])
+        theta_cov_terms = theta[1+n:]
+        sum_inv_cov = np.sum(1 / theta_cov_terms)
+    
+        results = []
+    
+        for scenar in scenars:
+            mu = self.mus.iloc[scenar, t]
+            cov = theta[0] + theta[1] * (previous_intensity - mu) ** 2
+    
+            diago = np.diag(np.array([cov]) / theta_cov_terms)
+            denom = 1 + cov * sum_inv_cov
+    
+            inverse = (1 / cov) * (diago - diago.dot(np.ones((n, n))).dot(diago) / denom)
+    
+            det = np.prod(theta_cov_terms) * denom
+            coeff = 1 / np.sqrt((2 * np.pi) ** n * det)
+    
+            vector = intensities - (mu + theta_total)
+            inside = -0.5 * vector.dot(inverse).dot(vector)
+    
+            if is_log:
+                results.append(np.log(coeff) + inside)
+            else:
+                results.append(coeff * np.exp(inside))
+    
+        return np.array(results)
  
     def full_density(self, theta, intensities, previous_intensity, t, is_log = False):
         '''
@@ -418,6 +450,64 @@ class Modelnu():
         
         # Put the densities as a column matrix
         return(self.density[:, np.newaxis])
+    
+    def full_density_2(self, theta, intensities, previous_intensity, t, is_log=False):
+        '''
+        Return a vector with the density values for each scenario in a vectorized way.
+    
+        Parameters
+        ----------
+        theta : Tuple
+            Parameters of the density.
+        intensities : Series
+            Carbon rates at year t for the companies.
+        previous_intensity : Float
+            Mean carbon rate for the previous year.
+        t : Int
+            Current year.
+        is_log : Bool, optional
+            If True, return log-densities.
+    
+        Returns
+        -------
+        np.ndarray
+            Densities (or log-densities) as a column vector (S x 1).
+        '''
+        intensities = np.asarray(intensities)
+        n = len(intensities)
+        S = len(self.mus)
+    
+        mu_vec = self.mus.iloc[:, t].values          # Shape: (S,)
+        cov = theta[0] + theta[1] * (previous_intensity - mu_vec) ** 2  # Shape: (S,)
+        
+        d = theta[1 + n:]
+        d_inv = 1 / d
+        denom = 1 + cov * np.sum(d_inv)              # Shape: (S,)
+        
+        nu = np.concatenate([theta[2:1 + n], [-np.sum(theta[2:1 + n])]])  # Shape: (n,)
+    
+        # Shape: (S, n)
+        vector = intensities[None, :] - (mu_vec[:, None] + nu[None, :])
+    
+        weighted = vector * d_inv[None, :]           # Shape: (S, n)
+        weighted_sum = np.sum(weighted, axis=1)      # Shape: (S,)
+        quad_form = (1 / cov) * (
+            np.einsum("ij,ij->i", weighted, vector) - 
+            (cov * weighted_sum ** 2) / denom
+        )                                            # Shape: (S,)
+        
+        log_det = np.sum(np.log(d)) + np.log(denom)  # Shape: (S,)
+        log_coeff = -0.5 * (n * np.log(2 * np.pi) + log_det)
+        log_density = log_coeff - 0.5 * quad_form    # Shape: (S,)
+    
+        densities = log_density if is_log else np.exp(log_density)
+        return densities[:, np.newaxis]
+    
+    def full_density(self, theta, intensities, previous_intensity, t, is_log = False):
+        js = np.arange(len(self.mus))
+        self.density = self.explicit_density_vec(theta, intensities, previous_intensity, js, t, is_log)
+        return self.density[:, np.newaxis]
+                
 
 #%% Filter
     
@@ -467,6 +557,49 @@ class Modelnu():
             return self.probas
         #print(self.probas)
         #wait = input("Enter")
+        
+    def filter_step(self, intensities, previous_intensity, get_probas=False):
+        '''
+        Perform a step of the Hamilton filter to evaluate the new conditional probabilities.
+    
+        Parameters
+        ----------
+        intensities : Series
+            Carbon rates at year t for the companies.
+        previous_intensity : Float
+            Mean carbon rate for the previous year.
+        get_probas : Bool, optional
+            Whether to return the updated probabilities.
+    
+        Returns
+        -------
+        np.ndarray or None
+            Updated probabilities if get_probas is True.
+        '''
+    
+        # Compute scenario densities (S x 1)
+        density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
+    
+        # Update probabilities via Bayes rule: p(j|t) ∝ p(j|t−1) * f(y_t | j)
+        num = self.probas * density_val  # Element-wise multiplication (S x 1)
+        marginal = np.sum(num)           # Scalar
+    
+        # Save previous probabilities
+        self.history_pi[:, self.history_count] = self.probas.flatten()
+        self.history_count += 1
+        self.history_marginal[self.history_count] = marginal
+    
+        # Normalize
+        self.probas = num / marginal
+    
+        # Optionally update emissions
+        if (self.history_count + self.start_year > 2023 and
+            self.emissions.columns[-1] + 1 < self.indicators.columns[-1] + 1):
+            self.update_emissions()
+    
+        if get_probas:
+            return self.probas
+
  
         
 #%% EM functions
