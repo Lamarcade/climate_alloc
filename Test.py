@@ -28,10 +28,10 @@ def input_params(simul):
     
     fi = simul.indicators
     p,q = fi.shape
-    central_var = 10 * np.random.rand()
+    central_var = 25 * np.random.rand()
     beta = np.random.rand()
-    nus = 10 * np.random.dirichlet(np.ones(p)) - 10 / p
-    sigmas = 100 * np.random.rand(p)
+    nus = 20 * np.random.dirichlet(np.ones(p)) - 20 / p
+    sigmas = 225 * np.random.rand(p)
     simul.initialize_parameters(central_var, beta, nus, sigmas)
     return simul
 
@@ -466,7 +466,7 @@ if __name__ == '__main__':
         all_probas_history_calib(
             future_path=input_path, scenar_path="Data/scenarios.xlsx",
             output=output_path, len_simul=29, initial_law=np.ones(7)/7,
-            n_iter=2,n_models=2, fake=False)
+            n_iter=3,n_models=16, fake=False)
 
 
     paths = [f"Data/Simul/Test3/Calib_{i}.xlsx" for i in range(1, 11)]
