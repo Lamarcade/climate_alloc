@@ -224,9 +224,9 @@ class Modelnu():
             self.indicators[i] = simul_sorted[i]
             
     def get_future_data_only(self, path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx", sheet = 0):
+        # DEPRECATED
         
-        
-        simul = pd.read_excel(path, sheet_name = sheet)
+        simul = pd.read_excel(path, index_col = 0, sheet_name = sheet)
         
         start_year = 2023
         
@@ -255,23 +255,19 @@ class Modelnu():
         
         self.indicators = pd.concat([self.indicators, simul_sorted.loc[:, simul_sorted.columns[1:]]], axis=1)
         
+       
     def future_data_df(self, simul_df, scenar_df, date_max=2051):
         start_year = 2023
         self.start_year = start_year - 1
-        
-        simul_sorted = simul_df.sort_values(by=start_year, ascending=False)
-        
+    
         self.mus = scenar_df.copy()
         self.mus = self.mus.loc[:, scenar_df.columns[2:date_max]]
-        
-        histo_means = self.indicators.mean(axis=1)
-        histo_order = histo_means.sort_values(ascending=False).index
-        self.index_mapping = dict(zip(simul_sorted.index, histo_order))
-        
-        simul_sorted.index = histo_order
+
+        simul_aligned = simul_df.reindex(self.indicators.index)
+    
         self.indicators = self.indicators.iloc[:, :0]
-        self.indicators = pd.concat([self.indicators, simul_sorted.iloc[:, 1:]], axis=1)
-        
+        self.indicators = pd.concat([self.indicators, simul_aligned], axis=1)   
+       
     def emissions_by_sectors(self):
         self.emissions = self.df[[f"Scope12 Y-{i}" for i in range(14, -1, -1)] + ["GICS Sector Name"]].groupby(by = "GICS Sector Name").sum()
         for i in range(14, -1, -1):

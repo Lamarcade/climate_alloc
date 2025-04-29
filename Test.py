@@ -248,7 +248,8 @@ def all_probas_history_calib(future_path = "Data/full_fixed_params.xlsx", scenar
     future_file = pd.ExcelFile(future_path)
     scenar_df = pd.read_excel(scenar_path)
 
-    future_data_dict = {sheet: future_file.parse(sheet) for sheet in future_file.sheet_names}
+    future_data_dict = {sheet: future_file.parse(sheet, index_col=0) 
+                        for sheet in future_file.sheet_names}
     params_scenars = list(future_data_dict.keys())
     
     models = []
@@ -327,6 +328,37 @@ def probas_plot(path = "Data/history_nocalib.xlsx", output = "Figs/stackplots_no
             pdf.savefig()
             plt.close()
 
+def average_probas_plot(paths, output="Figs/Simul/Test3/stackplots_avg.pdf", focus=None):
+    future_data_dicts = []
+    for path in paths:
+        excel_file = pd.ExcelFile(path)
+        future_data_dicts.append({
+            sheet: excel_file.parse(sheet, index_col=0)
+            for sheet in excel_file.sheet_names
+        })
+
+    scenars = list(future_data_dicts[0].keys())
+
+    with PdfPages(output) as pdf:
+        for sheet in scenars:
+            dfs = [d[sheet] for d in future_data_dicts]
+            stacked = pd.concat(dfs).groupby(level=0).mean()  
+
+            plot_probas = stacked.transpose()
+            plot_probas.rename(columns=dict_abbrev, inplace=True)
+
+            year_sort = focus if focus is not None else plot_probas.index[-1]
+            plot_probas = plot_probas[plot_probas.columns[plot_probas.loc[year_sort].argsort()[::-1]]]
+
+            color_list = [colors[col] for col in plot_probas.columns if col in colors]
+            if focus:
+                plot_probas.loc[:year_sort, :].plot.area(title=sheet, color=color_list)
+            else:
+                plot_probas.plot.area(title=sheet, color=color_list)
+            plt.legend(loc='upper left')
+
+            pdf.savefig()
+            plt.close()
 #%% Models evaluation
 
 def compare(simul):
@@ -406,8 +438,8 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
 #%% Test 1
 
-params_scenars, models = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
-probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
+#params_scenars, models = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
+#probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
 
 #%% Test 2
 
@@ -423,6 +455,22 @@ probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_noca
 
 #params_scenars, models = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
 #probas_plot()
+
+if __name__ == '__main__':
+    freeze_support()
+    for i in tqdm(range(1, 11), desc="Running calibrations"):
+        input_path = f"Data/Simul/Test3/Test3_{i}.xlsx"
+        output_path = f"Data/Simul/Test3/Calib_{i}.xlsx"
+        
+        
+        all_probas_history_calib(
+            future_path=input_path, scenar_path="Data/scenarios.xlsx",
+            output=output_path, len_simul=29, initial_law=np.ones(7)/7,
+            n_iter=2,n_models=2, fake=False)
+
+
+    paths = [f"Data/Simul/Test3/Calib_{i}.xlsx" for i in range(1, 11)]
+    average_probas_plot(paths, output="Figs/stackplots_avg_test3.pdf")
 
 #%% Test 4
 
