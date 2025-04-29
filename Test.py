@@ -28,11 +28,11 @@ def input_params(simul):
     
     fi = simul.indicators
     p,q = fi.shape
-    central_std = 10 * np.random.rand()
+    central_var = 10 * np.random.rand()
     beta = np.random.rand()
     nus = 10 * np.random.dirichlet(np.ones(p)) - 10 / p
     sigmas = 100 * np.random.rand(p)
-    simul.initialize_parameters(central_std, beta, nus, sigmas)
+    simul.initialize_parameters(central_var, beta, nus, sigmas)
     return simul
 
 #%% 
@@ -63,7 +63,6 @@ def comparison(initial_law = np.ones(7)/7, n_iter = 2):
     dicti = mm.get_scenario_data(date_max = 2024)
     
     elk, lk, probas = mm.EM(mm.indicators, n_iter = n_iter, get_all_probas = True)
-    
     
     
     return mm, elk, lk, dicti, probas
@@ -407,8 +406,8 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
 #%% Test 1
 
-#params_scenars, models = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
-#probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
+params_scenars, models = all_probas_history(future_path = "Data/fake_simul.xlsx", output = "Data/fake_nocalib.xlsx", fake = True)
+probas_plot(path = "Data/fake_nocalib.xlsx", output = "Figs/fake_stackplots_nocalib.pdf", focus = 30)
 
 #%% Test 2
 

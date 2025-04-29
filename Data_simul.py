@@ -89,8 +89,8 @@ def scenario_means():
     return(final_df)
 
 #%%
-#final_df = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
-final_df = scenario_means()
+final_df = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
+#final_df = scenario_means()
 #%%
 df_plot = final_df.reset_index().melt(id_vars="Scenario", var_name="Year", value_name="Ratio")
 plt.figure(figsize=(10, 6))
@@ -155,8 +155,8 @@ paths = simul_constant(scenar_index = index_used)
 summed, base = paths.mean(axis = 0), final_df.loc[index2scenar[index_used]]
 print((summed - base).sum())
 
-with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
-    paths.to_excel(writer, sheet_name = index2scenar[index_used])
+#with pd.ExcelWriter('Data/simul.xlsx', mode='a', if_sheet_exists = "overlay") as writer:  
+#    paths.to_excel(writer, sheet_name = index2scenar[index_used])
     
 #%%
 three_scenar = ["Current Policies", "Fragmented World", "Net Zero 2050"]
@@ -181,12 +181,18 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
     mu_old = mus.loc[locmu, 2023]
     di = multivariate_normal(mean = nus + mu_old, cov = matrix).rvs()
     
-    dis = pd.DataFrame({2023: di})
+    di = np.sort(di)[::-1]
     
+    dis = pd.DataFrame({2023: di}, index = Config.HISTO_ORDER)
+    
+    emissions = Config.EM_LAST.loc[Config.HISTO_ORDER].squeeze()
     new_dis = {}
     for col in mus.columns[mus.columns > 2023].values:
         mu_new = mus.loc[locmu, col]
-        dt = np.mean(di)
+        #dt = np.mean(di)
+        normalized_weights = emissions / emissions.sum()
+        
+        dt = np.average(di, weights=normalized_weights)
         
         matrix = (central_std + beta * (dt - mu_old)**2) * np.ones((n,n))
         matrix += np.diag(sigmas)
@@ -194,18 +200,33 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
         
         new_dis[col] = di
         
-        mu_old = mu_new
-    new_dis_df = pd.DataFrame(new_dis)
-    dis = pd.concat([dis, new_dis_df], axis=1)
+        # Update emissions
+        emissions = (di * np.abs(emissions) / 100) + emissions
         
+        mu_old = mu_new
+    new_dis_df = pd.DataFrame(new_dis, index=Config.HISTO_ORDER)
+    dis = pd.concat([dis, new_dis_df], axis=1)
+            
     return(dis)
 
 for scenar_used in all_scenar:
     
-    dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+    #dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+    
+    #with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+    #    dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+    
+    for i in range(1,11):
 
-    with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+        np.random.seed(42 + i)
+    
+        file_path = f"Data/Simul/Test3_{i}.xlsx"
+    
+        for scenar_used in all_scenar:
+            dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+    
+            with pd.ExcelWriter(file_path, mode='a', if_sheet_exists="overlay") as params_writer:
+                dis.to_excel(params_writer, sheet_name = scenar_used[:30])
 
 #%% Simulate data from intermediate scenarios 
 
@@ -247,12 +268,12 @@ def simul_intermediate(central_std, beta, nus, sigmas, scenar_index = index_used
         
     return(dis)
 
-for scenar_used in ["Optimistic", "Pessimistic", "Middle"]:
+#for scenar_used in ["Optimistic", "Pessimistic", "Middle"]:
     
-    dis = simul_intermediate(central_std, beta, nus, sigmas, scenar_name = scenar_used)
+#    dis = simul_intermediate(central_std, beta, nus, sigmas, scenar_name = scenar_used)
 
-    with pd.ExcelWriter('Data/intermediate.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+#    with pd.ExcelWriter('Data/intermediate.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
    
 #%% Simulate fake scenarios
 
@@ -270,12 +291,12 @@ fake_mus.loc["Current Policies", start:] = Config.MUS_CURPO
 fake_mus.loc["Fragmented World", start:] = Config.MUS_FW
 fake_mus.loc["Net Zero 2050", start:] = Config.MUS_NZ
 
-with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
-    fake_mus.to_excel(fake_writer)
+#with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
+#    fake_mus.to_excel(fake_writer)
     
 #scenar_used = "Net Zero 2050"
-for scenar_used in three_scenar:
-    fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
+#for scenar_used in three_scenar:
+#    fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
     
-    with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-        fake_dis.to_excel(params_writer, sheet_name = scenar_used)
+#    with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#        fake_dis.to_excel(params_writer, sheet_name = scenar_used)

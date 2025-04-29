@@ -212,6 +212,8 @@ class Modelnu():
         # The sector with the highest historical rate gets the highest rate 
         # from the simulation, and so on
         new_year = self.indicators.columns[-1]
+        
+        # Not weighted by emissions here since we attribute rates
         histo_means = self.indicators.mean(axis = 1)
         histo_order = histo_means.sort_values(ascending=False).index
         simul_sorted.index = histo_order

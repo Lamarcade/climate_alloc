@@ -5,6 +5,7 @@ Created on Mon Feb  3 17:23:29 2025
 @author: LoïcMARCADET
 """
 import numpy as np
+import pandas as pd
 
 CENTRAL_STD = 10
 BETA = 0.1
@@ -15,9 +16,9 @@ N_YEARS = 500
 FUTURE_START_YEAR = 2023
 START_YEAR = 2009
 
-MUS_CURPO = 100 * np.linspace(0.97, 5.0, N_YEARS)
-MUS_FW = 100 * np.linspace(0.97, 0, N_YEARS)
-MUS_NZ = 100 * np.linspace(0.97, -5.0, N_YEARS)
+MUS_CURPO = np.linspace(0, 500, N_YEARS)
+MUS_FW = np.linspace(0, 0, N_YEARS)
+MUS_NZ = np.linspace(0, -500, N_YEARS)
 
 SCENAR2INDEX = {"Below 2°C": 0, "Current Policies" : 1, "Delayed transition" : 2,
                "Fragmented World" : 3, "Low demand": 4, 
@@ -32,5 +33,26 @@ INDEX2SCENAR = {0 : "Below 2°C", 1: "Current Policies", 2: "Delayed transition"
 THREE_SCENAR = ["Current Policies", "Fragmented World", "Net Zero 2050"]
 INDEX3 = {0 : "Current Policies", 1: "Fragmented World", 2: "Net Zero 2050"}
 
+EMI = [12142172.555,45419671.249,35427299.17,252341275.3,
+4476767.77,14422595.09,153641770.68, 4024171.59512,
+522426997.0,1887437.35,251314998.23]
+
+GICS = ['Communication Services', 'Consumer Discretionary', 'Consumer Staples',
+       'Energy', 'Financials', 'Health Care', 'Industrials',
+       'Information Technology', 'Materials', 'Real Estate', 'Utilities']
+
+EM_LAST = pd.DataFrame(EMI, index = GICS)
+
+# Historical rates ordered 
+HISTO_ORDER = ['Materials',
+ 'Consumer Discretionary',
+ 'Utilities',
+ 'Communication Services',
+ 'Industrials',
+ 'Information Technology',
+ 'Consumer Staples',
+ 'Financials',
+ 'Energy',
+ 'Health Care']
 
  
