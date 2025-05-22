@@ -97,13 +97,12 @@ sigmas = Config.SIGMAS
 future = Config.FUTURE_START_YEAR
 
 #%% Verify filter on true scenarios
-def no_calibration(len_simul = 29, initial_law = np.ones(7)/7, 
-                   future_path = "Data/fixed_params.xlsx", scenar_path = "Data/scenarios.xlsx",
-                   sheet = 0):
+def no_calibration(future_df, scenar_df,len_simul = 29, 
+                   initial_law = np.ones(7)/7, sheet = 0):
     simul = Modelnu(len_simul, initial_law = initial_law)
-    simul.get_future_data_only(future_path, 
-                                    scenar_path = "Data/scenarios.xlsx", 
-                                    sheet = sheet)
+    
+    simul.future_data_df(future_df, scenar_df)
+
     fi = simul.indicators
     p,q = fi.shape
     
@@ -113,7 +112,7 @@ def no_calibration(len_simul = 29, initial_law = np.ones(7)/7,
     history_probas = np.zeros((7, fi.shape[1]))
     for t in range(fi.shape[1]):
 
-        history_probas[:, t] = simul.filter_step(fi.iloc[:,t], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[future + t-1]), get_probas = True).flatten()
+        history_probas[:, t] = simul.filter_step(fi.iloc[:,t], simul.compute_mean_rates(fi.iloc[:,t], simul.emissions[simul.start_year + t]), get_probas = True).flatten()
 
     return history_probas, simul
 
@@ -148,12 +147,22 @@ def all_probas_history(future_path = "Data/full_fixed_params.xlsx", output = "Da
     params_scenars = future.sheet_names
     models = []
     
+    future_file = pd.ExcelFile(future_path)
+
+    future_data_dict = {sheet: future_file.parse(sheet, index_col=0) 
+                        for sheet in future_file.sheet_names}
+    params_scenars = list(future_data_dict.keys())
+    
     for sheet in params_scenars:
+        future_df = future_data_dict[sheet]
         if fake:
+            scenar_df = pd.read_excel("Data/fake_scenarios.xlsx")
             all_probas, simul = verify_filter(fake_path = future_path, scenar_path = "Data/fake_scenarios.xlsx", sheet = sheet)
             col_years = range(Config.FUTURE_START_YEAR, Config.FUTURE_START_YEAR + all_probas.shape[1])
         else:
-            all_probas, simul = no_calibration(sheet = sheet, future_path = future_path)
+            scenar_df = pd.read_excel("Data/scenarios.xlsx")
+            all_probas, simul = no_calibration(future_df = future_df, 
+                                               scenar_df = scenar_df, sheet = sheet)
             col_years = range(Config.FUTURE_START_YEAR, 2051)
   
         scenario_df = pd.DataFrame(all_probas)
@@ -421,7 +430,58 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
     plt.legend(title="Scenario", bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     plt.grid(True)
-    plt.show()    
+    plt.show()  
+
+def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
+                                nocalib_template="Data/Simul/Test3/Nocalib_{}.xlsx",
+                                n_simulations=10):
+    kl_dict = {}
+    
+    all_calibs = [pd.ExcelFile(calib_template.format(i)) for i in range(1, n_simulations + 1)]
+    all_nocalibs = [pd.ExcelFile(nocalib_template.format(i)) for i in range(1, n_simulations + 1)]
+
+    scenars = all_calibs[0].sheet_names
+
+    for sheet in scenars:
+        all_kls = []
+
+        for calib_file, nocalib_file in zip(all_calibs, all_nocalibs):
+            cp = calib_file.parse(sheet, index_col=0)
+            ncp = nocalib_file.parse(sheet, index_col=0)
+
+            kl_values = {}
+            for col in cp.columns:
+                p = cp[col].values
+                q = ncp[col].values
+
+                p = p + 1e-12
+                q = q + 1e-12
+                p /= p.sum()
+                q /= q.sum()
+
+                kl_values[col] = entropy(p, q)
+
+            all_kls.append(pd.Series(kl_values))
+
+        avg_kl = pd.concat(all_kls, axis=1).mean(axis=1)
+        kl_dict[sheet] = avg_kl
+
+    kl_df = pd.DataFrame(kl_dict)
+
+    plt.figure(figsize=(12, 6))
+    for scenar in kl_df.columns:
+        plt.plot(kl_df.index, kl_df[scenar], label=scenar)
+
+    plt.title("Average KL-divergence between calibration and no calibration", fontsize=14)
+    plt.xlabel("Year")
+    plt.ylabel("KL Divergence")
+    plt.legend(title="Scenario", bbox_to_anchor=(1.05, 1), loc='upper left')
+    plt.tight_layout()
+    plt.grid(True)
+    plt.show()
+
+    return kl_df
+
 
 #%%
 # =============================================================================
@@ -443,34 +503,27 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
 #%% Test 2
 
-#if __name__ == '__main__':
-#    freeze_support()
-#    params_scenars, models, res = all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
-#                             output = "Data/fake_calib.xlsx",
-#                             len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
-#                             n_iter = 3, n_models = 8, fake = True)
-#    probas_plot(path = "Data/fake_calib.xlsx", output = "Figs/fake_stackplots_calib.pdf", focus = 30)
+if __name__ == '__main__':
+    freeze_support()
+    params_scenars, models, res = all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
+                             output = "Data/fake_calib.xlsx",
+                             len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
+                             n_iter = 3, n_models = 8, fake = True)
+    probas_plot(path = "Data/fake_calib.xlsx", output = "Figs/fake_stackplots_calib.pdf", focus = 30)
 
 #%% Test 3
 
 #params_scenars, models = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
 #probas_plot()
 
-if __name__ == '__main__':
-    freeze_support()
-    for i in tqdm(range(1, 11), desc="Running calibrations"):
-        input_path = f"Data/Simul/Test3/Test3_{i}.xlsx"
-        output_path = f"Data/Simul/Test3/Calib_{i}.xlsx"
-        
-        
-        all_probas_history_calib(
-            future_path=input_path, scenar_path="Data/scenarios.xlsx",
-            output=output_path, len_simul=29, initial_law=np.ones(7)/7,
-            n_iter=3,n_models=16, fake=False)
+# for i in tqdm(range(1, 11), desc="Simulation number"):
+#     input_path = f"Data/Simul/Test3/Test3_{i}.xlsx"
+#     output_path = f"Data/Simul/Test3/Nocalib_{i}.xlsx"
+#     all_probas_history(future_path=input_path, output=output_path)
+    
+# paths = [f"Data/Simul/Test3/Nocalib_{i}.xlsx" for i in range(1, 11)]
+# average_probas_plot(paths, output="Figs/stackplots_avg_test3nocalib.pdf")
 
-
-    paths = [f"Data/Simul/Test3/Calib_{i}.xlsx" for i in range(1, 11)]
-    average_probas_plot(paths, output="Figs/stackplots_avg_test3.pdf")
 
 #%% Test 4
 
@@ -481,6 +534,26 @@ if __name__ == '__main__':
 #    freeze_support()
 #    params_scenars, models, res_last_scenar = all_probas_history_calib(n_iter = 3, n_models = 8)
 #    probas_plot(path = "Data/parallel_calib.xlsx", output = "Figs/parallel_stackplots_calib.pdf")
+
+# =============================================================================
+# if __name__ == '__main__':
+#     freeze_support()
+#     for i in tqdm(range(1, 11), desc="Running calibrations"):
+#         input_path = f"Data/Simul/Test3/Test3_{i}.xlsx"
+#         output_path = f"Data/Simul/Test3/Calib_{i}.xlsx"
+#         
+#         
+#         all_probas_history_calib(
+#             future_path=input_path, scenar_path="Data/scenarios.xlsx",
+#             output=output_path, len_simul=29, initial_law=np.ones(7)/7,
+#             n_iter=3,n_models=16, fake=False)
+# 
+# 
+#     paths = [f"Data/Simul/Test3/Calib_{i}.xlsx" for i in range(1, 11)]
+#     average_probas_plot(paths, output="Figs/stackplots_avg_test3.pdf")
+# =============================================================================
+
+#average_calibration_effect()
 
 #%% Test 5 
 #scen, models = all_probas_history(future_path = "Data/intermediate.xlsx", output = "Data/intermediate_nocalib.xlsx")
@@ -496,5 +569,5 @@ if __name__ == '__main__':
 
 #%% Test 7
 
-# model, calib = best_past()
+#model, calib = best_past(n_iter = 3, n_models = 16)
 
