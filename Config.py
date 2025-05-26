@@ -55,4 +55,7 @@ HISTO_ORDER = ['Materials',
  'Energy',
  'Health Care']
 
- 
+# Sort by descending order
+NUS_2 = np.array([2.5, -3, 1, 0, 1.5, -1.5, -2, 3.0, -1.0, -0.5])*1
+NUS_FIXED = -np.sort(-NUS_2)
+NUS_ORDER = pd.DataFrame(NUS_FIXED, index = HISTO_ORDER, columns = ["Spreads"])

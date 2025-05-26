@@ -508,7 +508,7 @@ if __name__ == '__main__':
     params_scenars, models, res = all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
                              output = "Data/fake_calib.xlsx",
                              len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
-                             n_iter = 3, n_models = 8, fake = True)
+                             n_iter = 3, n_models = 16, fake = True)
     probas_plot(path = "Data/fake_calib.xlsx", output = "Figs/fake_stackplots_calib.pdf", focus = 30)
 
 #%% Test 3

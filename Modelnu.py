@@ -278,6 +278,7 @@ class Modelnu():
     def update_emissions(self):
         max_year = self.emissions.columns[-1] +1
         self.emissions[max_year] = self.indicators[max_year] * self.emissions[max_year-1] / 100 + self.emissions[max_year-1]
+        self.emissions = self.emissions.copy()
 
 #%% Evaluation functions    
  
