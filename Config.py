@@ -30,6 +30,11 @@ INDEX2SCENAR = {0 : "Below 2°C", 1: "Current Policies", 2: "Delayed transition"
                5: "Nationally Determined Contributions (NDCs)", 
                6:"Net Zero 2050"}
 
+INDEX2ABB= {0 : "B2C", 1: "CP", 2: "DelT",
+               3:"FW", 4: "LowD", 
+               5: "NDC", 
+               6:"NZ"}
+
 THREE_SCENAR = ["Current Policies", "Fragmented World", "Net Zero 2050"]
 INDEX3 = {0 : "Current Policies", 1: "Fragmented World", 2: "Net Zero 2050"}
 
@@ -59,3 +64,5 @@ HISTO_ORDER = ['Materials',
 NUS_2 = np.array([2.5, -3, 1, 0, 1.5, -1.5, -2, 3.0, -1.0, -0.5])*1
 NUS_FIXED = -np.sort(-NUS_2)
 NUS_ORDER = pd.DataFrame(NUS_FIXED, index = HISTO_ORDER, columns = ["Spreads"])
+
+SIGMAS_ORDER = pd.DataFrame(SIGMAS, index = HISTO_ORDER, columns = ["Variances"])

@@ -96,9 +96,9 @@ df_plot = final_df.reset_index().melt(id_vars="Scenario", var_name="Year", value
 plt.figure(figsize=(10, 6))
 sns.lineplot(data=df_plot, x="Year", y="Ratio", hue="Scenario", marker="o")
 
-plt.title("Carbonation rate for each scenario", fontsize=16)
+plt.title("Kyoto Gases decarbonation rates for each scenario", fontsize=16)
 plt.xlabel("Year", fontsize=14)
-plt.ylabel("CR (Kyoto Gases)", fontsize=14)
+plt.ylabel("Rate (%)", fontsize=14)
 plt.legend(title="Scenario", fontsize=12)
 plt.grid(True)
 plt.show()
@@ -237,14 +237,14 @@ sigmas_df = Config.SIGMAS_ORDER
 def simul_order(central_std, beta, nus_df, sigmas_df, scenar_index = index_used, scenar_name = None, mus = final_df):
     n = len(sigmas)
     matrix = central_std * np.ones((n,n))
-    matrix += np.diag(sigmas_df)
+    matrix += np.diag(sigmas_df["Variances"].values)
     if scenar_name is not None:
         locmu = scenar_name
     else:
         locmu = index2scenar[index_used]
     
     mu_old = mus.loc[locmu, 2023]
-    di = multivariate_normal(mean = nus_df + mu_old, cov = matrix).rvs()
+    di = multivariate_normal(mean = nus_df["Spreads"].values + mu_old, cov = matrix).rvs()
     
     dis = pd.DataFrame({2023: di}, index = Config.HISTO_ORDER)
     
@@ -252,14 +252,14 @@ def simul_order(central_std, beta, nus_df, sigmas_df, scenar_index = index_used,
     new_dis = {}
     for col in mus.columns[mus.columns > 2023].values:
         mu_new = mus.loc[locmu, col]
-        #dt = np.mean(di)
+
         normalized_weights = emissions / emissions.sum()
         
         dt = np.average(di, weights=normalized_weights)
         
         matrix = (central_std + beta * (dt - mu_old)**2) * np.ones((n,n))
-        matrix += np.diag(sigmas_df)
-        di = multivariate_normal(mean = nus_df + mu_new, cov = matrix).rvs()
+        matrix += np.diag(sigmas_df["Variances"].values)
+        di = multivariate_normal(mean = nus_df["Spreads"].values + mu_new, cov = matrix).rvs()
         
         new_dis[col] = di
         
@@ -272,12 +272,14 @@ def simul_order(central_std, beta, nus_df, sigmas_df, scenar_index = index_used,
             
     return(dis)
 
+# =============================================================================
 # for scenar_used in all_scenar:
-#     
-#     #dis = simul_order(central_std, beta, nus_df, sigmas_df, scenar_name = scenar_used)
-#     
-#     #with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-#     #    dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+#      
+#     dis = simul_order(central_std, beta, nus_df, sigmas_df, scenar_name = scenar_used)
+#      
+#     with pd.ExcelWriter('Data/ordered.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#         dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+# =============================================================================
 
 #%% Simulate data from intermediate scenarios 
 
@@ -342,12 +344,14 @@ fake_mus.loc["Current Policies", start:] = Config.MUS_CURPO
 fake_mus.loc["Fragmented World", start:] = Config.MUS_FW
 fake_mus.loc["Net Zero 2050", start:] = Config.MUS_NZ
 
-with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
-    fake_mus.to_excel(fake_writer)
+#with pd.ExcelWriter('Data/fake_scenarios.xlsx', mode='w') as fake_writer:  
+#    fake_mus.to_excel(fake_writer)
     
-scenar_used = "Net Zero 2050"
-for scenar_used in three_scenar:
-    fake_dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used, mus = fake_mus)
-    
-    with pd.ExcelWriter('Data/fake_simul.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-        fake_dis.to_excel(params_writer, sheet_name = scenar_used)
+# =============================================================================
+# scenar_used = "Net Zero 2050"
+# for scenar_used in three_scenar:
+#     fake_dis = simul_order(central_std, beta, nus_df, sigmas_df, scenar_name = scenar_used, mus = fake_mus)
+#     
+#     with pd.ExcelWriter('Data/fake_ordered.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+#         fake_dis.to_excel(params_writer, sheet_name = scenar_used)
+# =============================================================================

@@ -434,7 +434,7 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
 def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
                                 nocalib_template="Data/Simul/Test3/Nocalib_{}.xlsx",
-                                n_simulations=10):
+                                n_simulations=10, mini = False):
     kl_dict = {}
     
     all_calibs = [pd.ExcelFile(calib_template.format(i)) for i in range(1, n_simulations + 1)]
@@ -463,7 +463,10 @@ def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
 
             all_kls.append(pd.Series(kl_values))
 
-        avg_kl = pd.concat(all_kls, axis=1).mean(axis=1)
+        if mini:
+            avg_kl = min(all_kls, key=lambda s: s.loc[2050])
+        else:
+            avg_kl = pd.concat(all_kls, axis=1).mean(axis=1)
         kl_dict[sheet] = avg_kl
 
     kl_df = pd.DataFrame(kl_dict)
@@ -472,7 +475,10 @@ def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
     for scenar in kl_df.columns:
         plt.plot(kl_df.index, kl_df[scenar], label=scenar)
 
-    plt.title("Average KL-divergence between calibration and no calibration", fontsize=14)
+    if mini:
+        plt.title("Evolution of the lowest-in-2050 KL-divergence between calibration and no calibration", fontsize=14)
+    else:
+        plt.title("Average KL-divergence between calibration and no calibration", fontsize=14)
     plt.xlabel("Year")
     plt.ylabel("KL Divergence")
     plt.legend(title="Scenario", bbox_to_anchor=(1.05, 1), loc='upper left')
@@ -482,6 +488,97 @@ def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
 
     return kl_df
 
+def final_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
+                                nocalib_template="Data/Simul/Test3/Nocalib_{}.xlsx",
+                                n_simulations=10):
+    kl_dict = {}
+    
+    all_calibs = [pd.ExcelFile(calib_template.format(i)) for i in range(1, n_simulations + 1)]
+    all_nocalibs = [pd.ExcelFile(nocalib_template.format(i)) for i in range(1, n_simulations + 1)]
+
+    scenars = all_calibs[0].sheet_names
+
+    for sheet in scenars:
+        all_kls = []
+
+        for calib_file, nocalib_file in zip(all_calibs, all_nocalibs):
+            cp = calib_file.parse(sheet, index_col=0)
+            ncp = nocalib_file.parse(sheet, index_col=0)
+
+            p = cp[cp.columns[-1]].values
+            q = ncp[cp.columns[-1]].values
+
+            p = p + 1e-12
+            q = q + 1e-12
+            p /= p.sum()
+            q /= q.sum()
+
+            kl_value = entropy(p, q)
+
+            all_kls.append(kl_value)
+
+        #avg_kl = pd.concat(all_kls, axis=1).mean(axis=1)
+        kl_dict[sheet] = all_kls
+
+    kl_df = pd.DataFrame(kl_dict)
+
+    plt.figure(figsize=(12, 6))
+    x_labels = kl_df.columns
+    x_positions = range(len(x_labels))
+    x_offset = 0.15
+    
+    for i, scenario in enumerate(x_labels):
+        y_values = kl_df[scenario]
+        x_values = [i] * len(y_values)  
+        plt.scatter(x_values, y_values, label=scenario)
+        
+        y_min = y_values.min()
+        y_max = y_values.max()
+        
+
+        plt.text(i - x_offset, y_min, f"{y_min:.3f}", color="blue", fontsize=8, ha='center', va='bottom')
+        plt.text(i - x_offset, y_max, f"{y_max:.3f}", color="red", fontsize=8, ha='center', va='top')
+
+    plt.title("KL-divergences between calibration and no calibration", fontsize=14)
+    plt.xlabel("Scenario")
+    plt.ylabel("KL Divergence")
+    plt.xticks(ticks=x_positions, labels=x_labels, rotation=45, ha='right')
+    plt.tight_layout()
+    plt.grid(True)
+    plt.show()
+
+    return kl_df
+
+def verif_probas_plot(path = "Data/history_calib.xlsx", nopath = "Data/history_nocalib.xlsx", scenar = "Fragmented World", title = None, titleno = None):
+    future = pd.ExcelFile(path)
+    nofuture = pd.ExcelFile(nopath)
+
+    probas = future.parse(scenar, index_col = 0)
+    noprobas = nofuture.parse(scenar, index_col = 0)
+    plot_probas = probas.transpose()
+    plot_no = noprobas.transpose()
+
+    plot_probas.rename(columns = dict_abbrev, inplace = True)
+    plot_no.rename(columns = dict_abbrev, inplace = True)
+
+    year_sort = plot_probas.index[-1]
+    sorted_cols = plot_probas.loc[year_sort].sort_values(ascending=False).index.tolist()
+    
+    
+    common_cols = [col for col in sorted_cols if col in plot_no.columns]
+    plot_probas = plot_probas[common_cols]
+    plot_no = plot_no[common_cols]
+    
+    color_list = [colors[col] if col in colors else 'grey' for col in common_cols]
+    
+    plot_probas.plot.area(title = scenar, color = color_list)
+    plt.legend(loc = 'upper left')
+    plt.title(title)
+
+    plot_no.plot.area(title = scenar, color = color_list)
+    plt.legend(loc = 'upper left')
+    plt.title(titleno)
+    plt.show()
 
 #%%
 # =============================================================================
@@ -503,13 +600,15 @@ def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
 
 #%% Test 2
 
-if __name__ == '__main__':
-    freeze_support()
-    params_scenars, models, res = all_probas_history_calib(future_path = "Data/fake_simul.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
-                             output = "Data/fake_calib.xlsx",
-                             len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
-                             n_iter = 3, n_models = 16, fake = True)
-    probas_plot(path = "Data/fake_calib.xlsx", output = "Figs/fake_stackplots_calib.pdf", focus = 30)
+# =============================================================================
+# if __name__ == '__main__':
+#     freeze_support()
+#     params_scenars, models, res = all_probas_history_calib(future_path = "Data/fake_ordered.xlsx", scenar_path = "Data/fake_scenarios.xlsx",
+#                              output = "Data/fake_calib_new.xlsx",
+#                              len_simul = len(Config.MUS_NZ) + 1, initial_law = np.ones(3)/3,
+#                              n_iter = 3, n_models = 16, fake = True)
+#     probas_plot(path = "Data/fake_calib_new.xlsx", output = "Figs/fake_stackplots_calib_new.pdf", focus = 30)
+# =============================================================================
 
 #%% Test 3
 
@@ -570,4 +669,11 @@ if __name__ == '__main__':
 #%% Test 7
 
 #model, calib = best_past(n_iter = 3, n_models = 16)
+
+#%% Verifications
+
+#kl_df = final_calibration_effect()
+
+verif_probas_plot(path = "Data/Simul/Test3/Calib_1.xlsx", nopath = "Data/Simul/Test3/Nocalib_1.xlsx", scenar = "Delayed transition", title = "DelT (Calibration)", titleno = "DelT (No calibration)")
+
 
