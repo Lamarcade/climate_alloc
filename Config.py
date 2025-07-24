@@ -38,15 +38,19 @@ INDEX2ABB= {0 : "B2C", 1: "CP", 2: "DelT",
 THREE_SCENAR = ["Current Policies", "Fragmented World", "Net Zero 2050"]
 INDEX3 = {0 : "Current Policies", 1: "Fragmented World", 2: "Net Zero 2050"}
 
-EMI = [12142172.555,45419671.249,35427299.17,252341275.3,
-4476767.77,14422595.09,153641770.68, 4024171.59512,
-522426997.0,1887437.35,251314998.23]
+#EMI = [12142172.555,45419671.249,35427299.17,252341275.3,
+#4476767.77,14422595.09,153641770.68, 4024171.59512,
+#522426997.0,1887437.35,251314998.23]
 
 GICS = ['Communication Services', 'Consumer Discretionary', 'Consumer Staples',
        'Energy', 'Financials', 'Health Care', 'Industrials',
        'Information Technology', 'Materials', 'Real Estate', 'Utilities']
 
-EM_LAST = pd.DataFrame(EMI, index = GICS)
+#EM_LAST = pd.DataFrame(EMI, index = GICS)
+
+HISTORY_EM = pd.read_excel("Data/history_sums.xlsx", index_col = 0)
+LAST_EM = pd.DataFrame(HISTORY_EM.loc[:,2022])
+
 
 # Historical rates ordered 
 HISTO_ORDER = ['Materials',

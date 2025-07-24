@@ -65,8 +65,10 @@ class Alloc():
         self.budget = budget
         
     def emissions_matrix(self):
-        emissions = Config.EM_LAST.copy()
-        emissions.columns = [Config.FUTURE_START_YEAR-1]
+        #emissions = Config.EM_LAST.copy()
+        #emissions.columns = [Config.FUTURE_START_YEAR-1]
+        
+        emissions = Config.LAST_EM.copy()        
         mus = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
         sces = []
         for scenar in mus.index:
@@ -107,16 +109,26 @@ class Alloc():
     def get_probas_simulation(self, path ="Data/Simul/Test3/Calib_1.xlsx", sheet_name = 0):
         self.all_probas = pd.read_excel(path, index_col = 0, sheet_name = sheet_name)
         
-    def cut_budget(self, linear=False, alpha = 1.5):
+    def cut_budget(self, start, end, linear=False, alpha = 1.5, x0 = 14):
         def reverse_sigmoid(alpha, T):
             t = np.arange(1, T + 1)
             return 1 / (1 + np.exp(alpha * (t - T / 2)))
+        
+        def reverse_sigmoid(start, end, i, alpha, x0 = 13):
+            # Decreasing sigmoid
+            sigma = 1 / (1 + np.exp(-alpha * (i - x0)))
+            return start + (end - start) * (sigma)
     
         if linear:
             self.parts = np.full(self.time, self.budget / self.time)
         else:
-            raw = reverse_sigmoid(alpha, self.time)
-            self.parts = self.budget * raw / raw.sum()
+            
+            i_vals = np.arange(self.time)
+            s_vals = reverse_sigmoid(start, end, i_vals, alpha, x0 = 14)
+
+            scale_factor = self.budget / np.sum(s_vals)
+
+            self.parts = s_vals * scale_factor
         
     def risk_free_stats(self):
         """
@@ -296,20 +308,15 @@ class Alloc():
     
 #%%
 
-# Below 2°C
-# Sum emissions util 2050
-# 2.06601e+08, 7.72824e+08, 6.02802e+08, 4.29363e+09, 7.6173e+07,2.45403e+08, 2.61424e+09
-#6.8472e+07, 8.88919e+09, 3.21151e+07,4.27617e+09
-
-# Take 1*e+09 to limit
-
 # Below : about 4 times as many emissions in the start as in the end
 
-budget = 3e+08
-alloc = Alloc(rf = 0, budget=budget)
-alloc.cut_budget(linear=False, alpha = 0.05)
+# NZ : 32 times as many emissions in the start as in the end
 
-scenar_used = 0
+budget = 2.75e+08
+alloc = Alloc(rf = 0, budget=budget)
+alloc.cut_budget(start = 5e+07, end = 1.5e+06, linear=False, alpha = 0.9)
+
+scenar_used = 6
 abb = Config.INDEX2ABB[scenar_used]
 
 alloc.get_probas_simulation("Data/Simul/Test3/Calib_1.xlsx", sheet_name = scenar_used)
@@ -320,10 +327,10 @@ carbs = [i["carbon"] for i in history]
 plt.plot(alloc.parts, marker='o')
 plt.plot(carbs)
 plt.title("Budget split")
-plt.ylabel("Budget for year")
+plt.ylabel("Budget for year (tCO2eq)")
 plt.xlabel("Year")
 plt.grid(True)
-plt.savefig(f"Figs/Alloc/carbon_traj_{abb}_{int(budget/1e+06)}Mt.png")
+plt.savefig(f"Figs/Alloc/{abb}/carbon_traj_{abb}_{int(budget/1e+06)}Mt.png")
 plt.show()
 
 #%%
@@ -334,7 +341,7 @@ color_mapping = dict(zip(GICS, palette))  # {sector_name: color}
 
 # Plot 1
 sector_emissions = pd.DataFrame(
-    alloc.scenario_emissions[0, :, :],
+    alloc.scenario_emissions[scenar_used, :, :],
     index=GICS,
     columns=range(Config.FUTURE_START_YEAR - 1, 2051)
 )
@@ -344,11 +351,11 @@ emissions_df.rename(columns={"index": "Year"}, inplace=True)
 
 plt.figure(figsize=(12, 6))
 sns.lineplot(data=emissions_df, x="Year", y="Emissions", hue="Sector", palette=color_mapping)
-plt.title("Emissions by sector (Below 2)")
+plt.title(f"Emissions by sector {Config.INDEX2SCENAR[scenar_used]}")
 plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 plt.grid(True)
 plt.tight_layout()
-plt.savefig(f"Figs/Alloc/emissions_{abb}.png")
+plt.savefig(f"Figs/Alloc/{abb}/emissions_{abb}.png")
 plt.show()
 
 
@@ -369,7 +376,7 @@ plt.title("Weight evolution by sector")
 plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
 plt.grid(True)
 plt.tight_layout()
-plt.savefig(f"Figs/Alloc/weights_{abb}_{int(budget/1e+06)}Mt.png")
+plt.savefig(f"Figs/Alloc/{abb}/weights_{abb}_{int(budget/1e+06)}Mt.png")
 plt.show()
 
     
