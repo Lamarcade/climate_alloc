@@ -14,7 +14,7 @@ from scipy.stats import multivariate_normal, norm
 from matplotlib.backends.backend_pdf import PdfPages
 from math import inf
 from scipy.stats import entropy
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from multiprocessing import freeze_support
 from tqdm import tqdm
 
@@ -615,13 +615,33 @@ def verif_probas_plot(path = "Data/history_calib.xlsx", nopath = "Data/history_n
 #params_scenars, models = all_probas_history(future_path = "Data/full_fixed_params.xlsx")
 #probas_plot()
 
+# =============================================================================
 # for i in tqdm(range(1, 11), desc="Simulation number"):
-#     input_path = f"Data/Simul/Test3/Test3_{i}.xlsx"
-#     output_path = f"Data/Simul/Test3/Nocalib_{i}.xlsx"
-#     all_probas_history(future_path=input_path, output=output_path)
+#      input_path = f"Data/Simul/Test3/All/Test3_{i}.xlsx"
+#      output_path = f"Data/Simul/Test3/All/Nocalib_{i}.xlsx"
+#      all_probas_history(future_path=input_path, output=output_path)
+# =============================================================================
     
 # paths = [f"Data/Simul/Test3/Nocalib_{i}.xlsx" for i in range(1, 11)]
 # average_probas_plot(paths, output="Figs/stackplots_avg_test3nocalib.pdf")
+
+def run_one(i):
+    input_path = f"Data/Simul/Test3/All/Test3_{i}.xlsx"
+    output_path = f"Data/Simul/Test3/All/Nocalib_{i}.xlsx"
+    all_probas_history(future_path=input_path, output=output_path)
+    return i  
+
+if __name__ == "__main__":
+    freeze_support()  
+
+    N = 1000
+    max_workers = 12   
+    
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(run_one, i) for i in range(1, N+1)]
+        
+        for f in tqdm(as_completed(futures), total=N, desc="Parallel models"):
+            pass
 
 
 #%% Test 4

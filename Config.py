@@ -51,18 +51,15 @@ GICS = ['Communication Services', 'Consumer Discretionary', 'Consumer Staples',
 HISTORY_EM = pd.read_excel("Data/history_sums.xlsx", index_col = 0)
 LAST_EM = pd.DataFrame(HISTORY_EM.loc[:,2022])
 
+DF_ORDER = LAST_EM.copy()
+DF_ORDER["Sector"] = DF_ORDER.index.str.replace(r"\s*\(n=\d+\)", "", regex=True)
+DF_ORDER = DF_ORDER[DF_ORDER["Sector"] != "Real Estate"]
 
 # Historical rates ordered 
-HISTO_ORDER = ['Materials',
- 'Consumer Discretionary',
- 'Utilities',
- 'Communication Services',
- 'Industrials',
- 'Information Technology',
- 'Consumer Staples',
- 'Financials',
- 'Energy',
- 'Health Care']
+HISTO_ORDER = DF_ORDER.sort_values(2022, ascending=False)["Sector"].tolist()
+
+#OLD_HISTO_ORDER = ['Materials','Consumer Discretionary','Utilities','Communication Services',
+# 'Industrials','Information Technology','Consumer Staples','Financials','Energy','Health Care']
 
 # Sort by descending order
 NUS_2 = np.array([2.5, -3, 1, 0, 1.5, -1.5, -2, 3.0, -1.0, -0.5])*1

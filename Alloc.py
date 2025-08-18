@@ -346,7 +346,7 @@ class Alloc():
     
         total_budgets = []
     
-        for (sim_path, sim_sheet), (proba_path, proba_sheet) in zip(sim_files, proba_files):
+        for (sim_path, sim_sheet), (proba_path, proba_sheet) in tqdm(zip(sim_files, proba_files), desc = "Simulation number"):
             alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=sim_sheet)
     
             alloc.get_probas_simulation(path=proba_path, sheet_name=proba_sheet)
@@ -446,8 +446,8 @@ def test_plot():
 
 #%%
 
-sim_files= [(f"Data/Simul/Test3/Test3_{i}.xlsx", scenar_used) for i in range(1,11)]
-nocalib_files= [(f"Data/Simul/Test3/Nocalib_{i}.xlsx", scenar_used) for i in range(1,11)]
+sim_files= [(f"Data/Simul/Test3/Test3_{i}.xlsx", scenar_used) for i in range(1,1001)]
+nocalib_files= [(f"Data/Simul/Test3/Nocalib_{i}.xlsx", scenar_used) for i in range(1,1001)]
 
 run, totals = alloc.run_multiple_allocations(sim_files, nocalib_files)
 
