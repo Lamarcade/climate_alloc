@@ -674,6 +674,6 @@ def verif_probas_plot(path = "Data/history_calib.xlsx", nopath = "Data/history_n
 
 #kl_df = final_calibration_effect()
 
-verif_probas_plot(path = "Data/Simul/Test3/Calib_1.xlsx", nopath = "Data/Simul/Test3/Nocalib_1.xlsx", scenar = "Delayed transition", title = "DelT (Calibration)", titleno = "DelT (No calibration)")
+#verif_probas_plot(path = "Data/Simul/Test3/Calib_1.xlsx", nopath = "Data/Simul/Test3/Nocalib_1.xlsx", scenar = "Delayed transition", title = "DelT (Calibration)", titleno = "DelT (No calibration)")
 
 

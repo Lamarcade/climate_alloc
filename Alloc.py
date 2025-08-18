@@ -25,7 +25,7 @@ import Config
 #%%
 class Alloc():
         
-    def __init__(self, rf, budget, short_sales = False, rf_params = False):
+    def __init__(self, rf, budget, short_sales = False, rf_params = False, sheet_name = 0):
         """
         Initializes a Portfolio instance.
 
@@ -52,6 +52,7 @@ class Alloc():
         self.current_time = 0 
         
         self.emissions_matrix()
+        self.emissions_matrix(sim = True, sheet_name = sheet_name)
         K, n, T_em = self.scenario_emissions.shape
         self.time = T_em
         
@@ -64,27 +65,51 @@ class Alloc():
     def set_budget(self, budget):
         self.budget = budget
         
-    def emissions_matrix(self):
+    def emissions_matrix(self, sim = False, path = "Data/Simul/Test3/Test3_1.xlsx", sheet_name = 0):
+        '''Computes the matrix of sector emissions over time for each scenario'''
+        # dim Scenar x Company x Time
+        
         #emissions = Config.EM_LAST.copy()
         #emissions.columns = [Config.FUTURE_START_YEAR-1]
         
-        emissions = Config.LAST_EM.copy()        
-        mus = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
-        sces = []
-        for scenar in mus.index:
-            sce = emissions.copy()
-            while sce.columns[-1] < 2050:       
-                max_year = sce.columns[-1] +1
-                sce[max_year] = mus.loc[scenar, max_year] * sce[max_year-1] / 100 + sce[max_year-1]
-                sce = sce.copy()
-            sces.append((scenar, sce))
+        emissions = Config.LAST_EM.copy()
+        emissions = emissions.drop("Real Estate (n=29)")
+        if sim:
+            # Simulated rates
+            mus = pd.read_excel(path, index_col = 0, sheet_name = sheet_name)
+            em = emissions.copy()
+            ind = em.index.str.replace(r"\s*\(n=\d+\)", "", regex=True)
+            em.index = ind
+            mus.reindex(ind)
+            while em.columns[-1] < 2050:       
+                max_year = em.columns[-1] +1
+                em[max_year] = mus[max_year] * em[max_year-1] / 100 + em[max_year-1]
+                em = em.copy()
+
+        else:
+            mus = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
+            sces = []
+            for scenar in mus.index:
+                sce = emissions.copy()
+                while sce.columns[-1] < 2050:       
+                    max_year = sce.columns[-1] +1
+                    sce[max_year] = mus.loc[scenar, max_year] * sce[max_year-1] / 100 + sce[max_year-1]
+                    sce = sce.copy()
+                sces.append((scenar, sce))
+                
+            scenario_emissions = np.stack([df.to_numpy() for (_,df) in sces], axis=0)
+
+        if sim:
+            self.sim_emissions = em
             
-        scenario_emissions = np.stack([df.to_numpy() for (_,df) in sces], axis=0)
         #K x n x T [scenar x company x time]
         # Time 2022 to 2050
-        self.scenario_emissions = scenario_emissions
+        else:
+            self.scenario_emissions = scenario_emissions
+        
         
     def return_stats(self):
+        '''Computes the historical returns mean and covariance'''
         returns = pd.read_excel("Data/Stoxx_returns.xlsx", index_col = 0)
         returns['GICS Sector Name'] = returns.groupby('Instrument')['GICS Sector Name'].ffill()
         returns = returns[['Date', 'GICS Sector Name', 'Instrument', 'Total Return']]
@@ -95,6 +120,7 @@ class Alloc():
         returns = returns.dropna(subset=['Return', 'Sector'])
         
         sector_returns = returns.groupby(['Date', 'Sector'])['Return'].mean().unstack()
+        sector_returns.drop(columns = ["Real Estate"], inplace = True)
         
         self.mu = sector_returns.mean()
 
@@ -108,8 +134,13 @@ class Alloc():
       
     def get_probas_simulation(self, path ="Data/Simul/Test3/Calib_1.xlsx", sheet_name = 0):
         self.all_probas = pd.read_excel(path, index_col = 0, sheet_name = sheet_name)
-        
+       
+    def get_rates(self, path = "Data/Simul/Test3/Test3_1.xlsx", sheet_name= 0):
+        self.rates = pd.read_excel(path, index_col = 0, sheet_name = sheet_name)
+       
     def cut_budget(self, start, end, linear=False, alpha = 1.5, x0 = 14):
+        '''Splits the budget into parts in a linear or sigmoidal way'''
+        
         def reverse_sigmoid(alpha, T):
             t = np.arange(1, T + 1)
             return 1 / (1 + np.exp(alpha * (t - T / 2)))
@@ -209,6 +240,8 @@ class Alloc():
         means = self.probas.T.dot(self.scenario_emissions[:,:,self.current_time])
         return weights.T.dot(means)
     
+    def true_carbon(self, weights):
+        return weights.T.dot(self.sim_emissions[self.current_time + Config.FUTURE_START_YEAR])
     
 #%% 
 
@@ -293,6 +326,7 @@ class Alloc():
                 ret = self.get_return(weights)
                 risk = self.get_risk(weights)
                 carbon = self.get_carbon(weights)
+                realized = self.true_carbon(weights)
                 all_weights.append({
                     'year': t + Config.FUTURE_START_YEAR,
                     'weights': weights,
@@ -300,10 +334,31 @@ class Alloc():
                     'return': ret,
                     'risk': risk,
                     'carbon': carbon,
+                    'realized': realized,
                     'allocated_budget': self.parts[t]
                 })
     
         return all_weights if log else weights
+    
+    def run_multiple_allocations(self, sim_files, proba_files):
+
+        assert len(sim_files) == len(proba_files), "Incompatible file numbers"
+    
+        total_budgets = []
+    
+        for (sim_path, sim_sheet), (proba_path, proba_sheet) in zip(sim_files, proba_files):
+            alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=sim_sheet)
+    
+            alloc.get_probas_simulation(path=proba_path, sheet_name=proba_sheet)
+    
+            run = alloc.allocate_over_time(log=True)
+            df_run = pd.DataFrame(run)
+    
+            total_realized = df_run["realized"].sum()
+            total_budgets.append(total_realized)
+    
+        return df_run, total_budgets
+
 
     
 #%%
@@ -312,73 +367,103 @@ class Alloc():
 
 # NZ : 32 times as many emissions in the start as in the end
 
-budget = 2.75e+08
-alloc = Alloc(rf = 0, budget=budget)
-alloc.cut_budget(start = 5e+07, end = 1.5e+06, linear=False, alpha = 0.9)
-
 scenar_used = 6
+budget = 2e+08
+alloc = Alloc(rf = 0, budget=budget, sheet_name = scenar_used)
+alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
+
 abb = Config.INDEX2ABB[scenar_used]
 
-alloc.get_probas_simulation("Data/Simul/Test3/Calib_1.xlsx", sheet_name = scenar_used)
-history = alloc.allocate_over_time()
+# Simulations with the lowest KL for each scenario
+kl_scenar_best_sims = {0:3, 1:6, 2:10, 3:1, 4:4, 5:6, 6:9}
 
-carbs = [i["carbon"] for i in history]
-
-plt.plot(alloc.parts, marker='o')
-plt.plot(carbs)
-plt.title("Budget split")
-plt.ylabel("Budget for year (tCO2eq)")
-plt.xlabel("Year")
-plt.grid(True)
-plt.savefig(f"Figs/Alloc/{abb}/carbon_traj_{abb}_{int(budget/1e+06)}Mt.png")
-plt.show()
-
-#%%
-
-GICS = Config.GICS
+GICS = Config.GICS.copy()
+GICS.remove("Real Estate")
 palette = sns.color_palette("tab10", n_colors=len(GICS))
 color_mapping = dict(zip(GICS, palette))  # {sector_name: color}
 
-# Plot 1
-sector_emissions = pd.DataFrame(
-    alloc.scenario_emissions[scenar_used, :, :],
-    index=GICS,
-    columns=range(Config.FUTURE_START_YEAR - 1, 2051)
-)
-
-emissions_df = sector_emissions.T.reset_index().melt(id_vars="index", var_name="Sector", value_name="Emissions")
-emissions_df.rename(columns={"index": "Year"}, inplace=True)
-
-plt.figure(figsize=(12, 6))
-sns.lineplot(data=emissions_df, x="Year", y="Emissions", hue="Sector", palette=color_mapping)
-plt.title(f"Emissions by sector {Config.INDEX2SCENAR[scenar_used]}")
-plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-plt.grid(True)
-plt.tight_layout()
-plt.savefig(f"Figs/Alloc/{abb}/emissions_{abb}.png")
-plt.show()
-
-
-# Plot 2
-weights_df = pd.DataFrame({
-    "Year": [i["year"] for i in history],
-    "Weights": [i["weights"] for i in history]
-})
-
-weights_expanded = pd.DataFrame(weights_df['Weights'].tolist(), columns=GICS)
-weights_expanded['Year'] = weights_df['Year']
-
-weights_melted = weights_expanded.melt(id_vars='Year', var_name='Sector', value_name='Weight')
-
-plt.figure(figsize=(12, 6))
-sns.lineplot(data=weights_melted, x="Year", y="Weight", hue="Sector", palette=color_mapping)
-plt.title("Weight evolution by sector")
-plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
-plt.grid(True)
-plt.tight_layout()
-plt.savefig(f"Figs/Alloc/{abb}/weights_{abb}_{int(budget/1e+06)}Mt.png")
-plt.show()
-
+#%%
+def test_plot():
+    alloc.get_probas_simulation(f"Data/Simul/Test3/Calib_{kl_scenar_best_sims[scenar_used]}.xlsx", sheet_name = scenar_used)
+    history = alloc.allocate_over_time()
     
+    carbs = [i["carbon"] for i in history]
+    real = [i["realized"] for i in history]
+    
+    plt.plot(alloc.parts, marker='o')
+    plt.plot(carbs, label = "Expected")
+    plt.plot(real, label = 'Realized')
+    plt.title("Budget split")
+    plt.ylabel("Budget for year (tCO2eq)")
+    plt.xlabel("Year")
+    plt.grid(True)
+    plt.savefig(f"Figs/Alloc/{abb}/carbon_traj_{abb}_{int(budget/1e+06)}Mt.png")
+    plt.show()
+
+
+
+
+
+    # Plot 1
+    sector_emissions = pd.DataFrame(
+        alloc.scenario_emissions[scenar_used, :, :],
+        index=GICS,
+        columns=range(Config.FUTURE_START_YEAR - 1, 2051)
+    )
+    
+    emissions_df = sector_emissions.T.reset_index().melt(id_vars="index", var_name="Sector", value_name="Emissions")
+    emissions_df.rename(columns={"index": "Year"}, inplace=True)
+    
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(data=emissions_df, x="Year", y="Emissions", hue="Sector", palette=color_mapping)
+    plt.title(f"Emissions by sector {Config.INDEX2SCENAR[scenar_used]}")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(f"Figs/Alloc/{abb}/emissions_{abb}.png")
+    plt.show()
+
+
+    # Plot 2
+    weights_df = pd.DataFrame({
+        "Year": [i["year"] for i in history],
+        "Weights": [i["weights"] for i in history]
+    })
+    
+    weights_expanded = pd.DataFrame(weights_df['Weights'].tolist(), columns=GICS)
+    weights_expanded['Year'] = weights_df['Year']
+    
+    weights_melted = weights_expanded.melt(id_vars='Year', var_name='Sector', value_name='Weight')
+    
+    plt.figure(figsize=(12, 6))
+    sns.lineplot(data=weights_melted, x="Year", y="Weight", hue="Sector", palette=color_mapping)
+    plt.title("Weight evolution by sector")
+    plt.legend(bbox_to_anchor=(1.05, 1), loc="upper left")
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig(f"Figs/Alloc/{abb}/weights_{abb}_{int(budget/1e+06)}Mt.png")
+    plt.show()
+
+#%%
+
+sim_files= [(f"Data/Simul/Test3/Test3_{i}.xlsx", scenar_used) for i in range(1,11)]
+nocalib_files= [(f"Data/Simul/Test3/Nocalib_{i}.xlsx", scenar_used) for i in range(1,11)]
+
+run, totals = alloc.run_multiple_allocations(sim_files, nocalib_files)
+
+plt.figure(figsize=(12,6))
+sns.histplot(totals, bins=20, kde=True, color="skyblue")
+
+plt.axvline(budget, color="red", linestyle="--", linewidth=2, label=f"Max budget ({int(budget/1e+06)}Mt)")
+
+
+plt.xlabel("Realized budget")
+plt.ylabel("Frequency")
+plt.title("Distribution of realized budgets across runs")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
     
     
