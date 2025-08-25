@@ -169,11 +169,15 @@ class Alloc():
             Portfolio: Updated Portfolio instance.
         """
         if not(self.rf_params):
-            self.mu = np.insert(self.mu,0,self.rf)
+            rf_name = "Risk free"
+            self.mu.loc[rf_name] = self.rf
+            
             self.n = self.n+1
-            sigma_rf = np.zeros((self.n, self.n))
-            sigma_rf[1:,1:] = self.sigma
-            self.sigma = sigma_rf
+
+            self.sigma[rf_name] = 0.0            
+            self.sigma.loc[rf_name] = 0.0
+            self.sigma.loc[rf_name, rf_name] = 0.0
+            
             self.rf_params = True
                 
             return self
@@ -202,6 +206,7 @@ class Alloc():
         Returns:
             float: Risk of the portfolio.
         """
+        
         return np.sqrt(weights.T.dot(self.sigma).dot(weights))
     
     def get_return(self, weights):
@@ -237,11 +242,19 @@ class Alloc():
         # Probas shape (K,)
         # Weights shape (n,)
         # Means shape (n,)
+        if self.rf_params:
+            w = weights[:-1]
+        else:
+            w = weights
         means = self.probas.T.dot(self.scenario_emissions[:,:,self.current_time])
-        return weights.T.dot(means)
+        return w.T.dot(means)
     
     def true_carbon(self, weights):
-        return weights.T.dot(self.sim_emissions[self.current_time + Config.FUTURE_START_YEAR])
+        if self.rf_params:
+            w = weights[:-1]
+        else:
+            w = weights
+        return w.T.dot(self.sim_emissions[self.current_time + Config.FUTURE_START_YEAR])
     
 #%% 
 
@@ -309,7 +322,7 @@ class Alloc():
                           bounds=boundaries)
         return result.x
     
-    def allocate_over_time(self, log=True):
+    def allocate_over_time(self, log=True, update_budget = True):
 
         K, n, T = self.scenario_emissions.shape
         
@@ -319,6 +332,7 @@ class Alloc():
             self.current_time = t
             self.probas = self.all_probas.loc[:, t + Config.FUTURE_START_YEAR].values  # 1D array (K,)
     
+            #print(self.parts[t], " after updating")
             weights = self.optimal_portfolio_carbon(max_budget=self.parts[t])
             
             if log:
@@ -337,10 +351,14 @@ class Alloc():
                     'realized': realized,
                     'allocated_budget': self.parts[t]
                 })
+                
+            if update_budget: 
+                #print(self.parts[t+1], " before updating")
+                self.parts[t+1] += self.parts[t]- realized
     
         return all_weights if log else weights
     
-    def run_multiple_allocations(self, sim_files, proba_files):
+    def run_multiple_allocations(self, sim_files, proba_files, update_budget = True):
 
         assert len(sim_files) == len(proba_files), "Incompatible file numbers"
     
@@ -348,11 +366,12 @@ class Alloc():
         sharpes = []
     
         for (sim_path, sim_sheet), (proba_path, proba_sheet) in tqdm(zip(sim_files, proba_files), total = 1000, desc = "Simulation number"):
+            alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
             alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=sim_sheet)
     
             alloc.get_probas_simulation(path=proba_path, sheet_name=proba_sheet)
     
-            run = alloc.allocate_over_time(log=True)
+            run = alloc.allocate_over_time(log=True, update_budget = update_budget)
             df_run = pd.DataFrame(run)
     
             total_realized = df_run["realized"].sum()
@@ -391,9 +410,11 @@ class Alloc():
 
 # NZ : 32 times as many emissions in the start as in the end
 
-scenar_used = 6
-budget = 1e+08
-alloc = Alloc(rf = 0, budget=budget, sheet_name = scenar_used)
+scenar_used = 5
+budget = 0
+
+alloc = Alloc(rf = 0.003, budget=budget, sheet_name = scenar_used)
+alloc.risk_free_stats()
 alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
 
 abb = Config.INDEX2ABB[scenar_used]
@@ -403,6 +424,7 @@ kl_scenar_best_sims = {0:3, 1:6, 2:10, 3:1, 4:4, 5:6, 6:9}
 
 GICS = Config.GICS.copy()
 GICS.remove("Real Estate")
+GICS += ["Risk-free"]
 palette = sns.color_palette("tab10", n_colors=len(GICS))
 color_mapping = dict(zip(GICS, palette))  # {sector_name: color}
 
@@ -424,10 +446,6 @@ def test_plot():
     plt.legend()
     plt.savefig(f"Figs/Alloc/{abb}/carbon_traj_{abb}_{int(budget/1e+06)}Mt.png")
     plt.show()
-
-
-
-
 
     # Plot 1
     sector_emissions = pd.DataFrame(
@@ -471,34 +489,63 @@ def test_plot():
 
 #%%
 
-sim_files= [(f"Data/Simul/Test3/All/Test3_{i}.xlsx", scenar_used) for i in range(1,1001)]
-nocalib_files= [(f"Data/Simul/Test3/All/Nocalib_{i}.xlsx", scenar_used) for i in range(1,1001)]
 
-sharpes, totals = alloc.run_multiple_allocations(sim_files, nocalib_files)
-
-plt.figure(figsize=(12,6))
-sns.histplot(totals, bins=20, kde=True, color="skyblue")
-
-plt.axvline(budget, color="red", linestyle="--", linewidth=2, label=f"Max budget ({int(budget/1e+06)}Mt)")
-
-
-plt.xlabel("Realized budget")
-plt.ylabel("Frequency")
-plt.title("Distribution of realized budgets across runs")
-plt.legend()
-
-plt.tight_layout()
-plt.show()
-
-plt.figure(figsize=(12,6))
-sns.histplot(sharpes, bins=20, kde=False, color="skyblue")
-
-plt.xlabel("Sharpe ratio")
-plt.ylabel("Frequency")
-plt.title("Distribution of time-averaged Sharpe ratios across runs")
-plt.legend()
-
-plt.tight_layout()
-plt.show()
-
+def distribution_tests():
+    sim_files= [(f"Data/Simul/Test3/All/Test3_{i}.xlsx", scenar_used) for i in range(1,1001)]
+    nocalib_files= [(f"Data/Simul/Test3/All/Nocalib_{i}.xlsx", scenar_used) for i in range(1,1001)]
     
+    sharpes, totals = alloc.run_multiple_allocations(sim_files, nocalib_files)
+    
+    plt.figure(figsize=(12,6))
+    sns.histplot(totals, bins=20, kde=True, color="skyblue")
+    
+    plt.axvline(budget, color="red", linestyle="--", linewidth=2, label=f"Max budget ({int(budget/1e+06)}Mt)")
+    plt.axvline(np.mean(totals), color="green", linestyle="--", linewidth=2, label=f"Mean of realized budgets")
+    
+    plt.xlabel("Realized budget")
+    plt.ylabel("Frequency")
+    plt.title("Distribution of realized budgets across runs")
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    plt.figure(figsize=(12,6))
+    sns.histplot(sharpes, bins=20, kde=False, color="skyblue")
+    
+    plt.xlabel("Sharpe ratio")
+    plt.ylabel("Frequency")
+    plt.title("Distribution of time-averaged Sharpe ratios across runs")
+    plt.legend()
+    
+    plt.tight_layout()
+    plt.show()
+    
+    return sharpes, totals
+
+#sharpes, totals = distribution_tests()
+
+#%%
+num_test = 3
+sim_path = f"Data/Simul/Test3/All/Test3_{num_test}.xlsx"
+alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=scenar_used)
+alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
+plt.figure()
+plt.plot(alloc.parts, label ="Initial budgets", marker='o')
+
+alloc.get_probas_simulation(f"Data/Simul/Test3/Calib_{num_test}.xlsx", sheet_name = scenar_used)
+history = alloc.allocate_over_time()
+
+carbs = [i["carbon"] for i in history]
+real = [i["realized"] for i in history]
+
+plt.plot(alloc.parts, label = "Updated budgets", marker='o')
+plt.plot(carbs, label = "Expected", marker = "+")
+plt.plot(real, label = 'Realized', marker = "*")
+plt.title("Budget split")
+plt.ylabel("Budget for year (tCO2eq)")
+plt.xlabel("Year")
+plt.grid(True)
+plt.legend()
+
+plt.show()
