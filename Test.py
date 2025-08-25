@@ -405,6 +405,7 @@ def calibration_effect(calib_path="Data/history_calib.xlsx", nocalib_path="Data/
 
     kl_dict = {}
 
+
     for sheet in scenars:
         cp = calib.parse(sheet, index_col=0)
         ncp = no_calib.parse(sheet, index_col=0)
@@ -442,24 +443,50 @@ def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
 
     scenars = all_calibs[0].sheet_names
 
+    clusters = {
+    "Cluster 1 (CP)": [
+        "Current Policies",
+        "Nationally Determined Contributions (NDCs)"
+    ],
+    "Cluster 2 (FW)": [
+        "Below 2°C",
+        "Fragmented World"
+    ],
+    "Cluster 3 (NZ)": [
+        "Delayed transition",
+        "Low demand",
+        "Net Zero 2050"
+    ]
+}
     for sheet in scenars:
         all_kls = []
 
         for calib_file, nocalib_file in zip(all_calibs, all_nocalibs):
             cp = calib_file.parse(sheet, index_col=0)
             ncp = nocalib_file.parse(sheet, index_col=0)
+            
+                        
+            cp_clusters = pd.DataFrame({
+            cluster: cp.loc[scenarios].sum()
+            for cluster, scenarios in clusters.items()
+        }).T
+            ncp_clusters = pd.DataFrame({
+            cluster: ncp.loc[scenarios].sum()
+            for cluster, scenarios in clusters.items()
+        }).T
 
             kl_values = {}
             for col in cp.columns:
-                p = cp[col].values
-                q = ncp[col].values
+                p = cp_clusters[col].values
+                q = ncp_clusters[col].values
 
-                p = p + 1e-12
-                q = q + 1e-12
-                p /= p.sum()
-                q /= q.sum()
+                #p = p + 1e-12
+                #q = q + 1e-12
+                #p /= p.sum()
+                #q /= q.sum()
 
-                kl_values[col] = entropy(p, q)
+                #kl_values[col] = entropy(p, q)
+                kl_values[col] = sum(abs(p-q))/2
 
             all_kls.append(pd.Series(kl_values))
 
@@ -476,11 +503,11 @@ def average_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
         plt.plot(kl_df.index, kl_df[scenar], label=scenar)
 
     if mini:
-        plt.title("Evolution of the lowest-in-2050 KL-divergence between calibration and no calibration", fontsize=14)
+        plt.title("Evolution of the lowest-in-2050 Total Variation Distance between calibration and no calibration", fontsize=14)
     else:
-        plt.title("Average KL-divergence between calibration and no calibration", fontsize=14)
+        plt.title("Average Total Variation Distance between calibration and no calibration", fontsize=14)
     plt.xlabel("Year")
-    plt.ylabel("KL Divergence")
+    plt.ylabel("TVD")
     plt.legend(title="Scenario", bbox_to_anchor=(1.05, 1), loc='upper left')
     plt.tight_layout()
     plt.grid(True)
@@ -498,22 +525,49 @@ def final_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
 
     scenars = all_calibs[0].sheet_names
 
+    clusters = {
+    "Cluster 1 (CP)": [
+        "Current Policies",
+        "Nationally Determined Contributions (NDCs)"
+    ],
+    "Cluster 2 (FW)": [
+        "Below 2°C",
+        "Fragmented World"
+    ],
+    "Cluster 3 (NZ)": [
+        "Delayed transition",
+        "Low demand",
+        "Net Zero 2050"
+    ]
+}
+
     for sheet in scenars:
         all_kls = []
 
         for calib_file, nocalib_file in zip(all_calibs, all_nocalibs):
             cp = calib_file.parse(sheet, index_col=0)
             ncp = nocalib_file.parse(sheet, index_col=0)
+            
+            cp_clusters = pd.DataFrame({
+            cluster: cp.loc[scenarios].sum()
+            for cluster, scenarios in clusters.items()
+        }).T
+            ncp_clusters = pd.DataFrame({
+            cluster: ncp.loc[scenarios].sum()
+            for cluster, scenarios in clusters.items()
+        }).T
 
-            p = cp[cp.columns[-1]].values
-            q = ncp[cp.columns[-1]].values
+            p = cp_clusters[cp_clusters.columns[-1]].values
+            q = ncp_clusters[ncp_clusters.columns[-1]].values
 
-            p = p + 1e-12
-            q = q + 1e-12
-            p /= p.sum()
-            q /= q.sum()
+            #p = p + 1e-12
+            #q = q + 1e-12
+            #p /= p.sum()
+            #q /= q.sum()
 
-            kl_value = entropy(p, q)
+            #kl_value = entropy(p, q)
+            
+            kl_value = sum(abs(p-q)/2)
 
             all_kls.append(kl_value)
 
@@ -539,9 +593,9 @@ def final_calibration_effect(calib_template="Data/Simul/Test3/Calib_{}.xlsx",
         plt.text(i - x_offset, y_min, f"{y_min:.3f}", color="blue", fontsize=8, ha='center', va='bottom')
         plt.text(i - x_offset, y_max, f"{y_max:.3f}", color="red", fontsize=8, ha='center', va='top')
 
-    plt.title("KL-divergences between calibration and no calibration", fontsize=14)
+    plt.title("Total Variation Distance between calibration and no calibration", fontsize=14)
     plt.xlabel("Scenario")
-    plt.ylabel("KL Divergence")
+    plt.ylabel("TVD")
     plt.xticks(ticks=x_positions, labels=x_labels, rotation=45, ha='right')
     plt.tight_layout()
     plt.grid(True)
@@ -625,23 +679,25 @@ def verif_probas_plot(path = "Data/history_calib.xlsx", nopath = "Data/history_n
 # paths = [f"Data/Simul/Test3/Nocalib_{i}.xlsx" for i in range(1, 11)]
 # average_probas_plot(paths, output="Figs/stackplots_avg_test3nocalib.pdf")
 
-def run_one(i):
-    input_path = f"Data/Simul/Test3/All/Test3_{i}.xlsx"
-    output_path = f"Data/Simul/Test3/All/Nocalib_{i}.xlsx"
-    all_probas_history(future_path=input_path, output=output_path)
-    return i  
-
-if __name__ == "__main__":
-    freeze_support()  
-
-    N = 1000
-    max_workers = 12   
-    
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(run_one, i) for i in range(1, N+1)]
-        
-        for f in tqdm(as_completed(futures), total=N, desc="Parallel models"):
-            pass
+# =============================================================================
+# def run_one(i):
+#     input_path = f"Data/Simul/Test3/All/Test3_{i}.xlsx"
+#     output_path = f"Data/Simul/Test3/All/Nocalib_{i}.xlsx"
+#     all_probas_history(future_path=input_path, output=output_path)
+#     return i  
+# 
+# if __name__ == "__main__":
+#     freeze_support()  
+# 
+#     N = 1000
+#     max_workers = 12   
+#     
+#     with ProcessPoolExecutor(max_workers=max_workers) as executor:
+#         futures = [executor.submit(run_one, i) for i in range(1, N+1)]
+#         
+#         for f in tqdm(as_completed(futures), total=N, desc="Parallel models"):
+#             pass
+# =============================================================================
 
 
 #%% Test 4
@@ -693,7 +749,7 @@ if __name__ == "__main__":
 #%% Verifications
 
 #kl_df = final_calibration_effect()
-
-#verif_probas_plot(path = "Data/Simul/Test3/Calib_1.xlsx", nopath = "Data/Simul/Test3/Nocalib_1.xlsx", scenar = "Delayed transition", title = "DelT (Calibration)", titleno = "DelT (No calibration)")
+#kl_df = average_calibration_effect(mini = True)
+verif_probas_plot(path = "Data/Simul/Test3/Calib_4.xlsx", nopath = "Data/Simul/Test3/Nocalib_4.xlsx", scenar = "Fragmented World", title = "DelT (Calibration)", titleno = "DelT (No calibration)")
 
 

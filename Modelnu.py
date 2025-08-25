@@ -579,19 +579,18 @@ class Modelnu():
         # Compute scenario densities (S x 1)
         density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
     
-        # Update probabilities via Bayes rule: p(j|t) ∝ p(j|t−1) * f(y_t | j)
+        # Update probabilities via Bayes rule
         num = self.probas * density_val  # Element-wise multiplication (S x 1)
-        marginal = np.sum(num)           # Scalar
+        marginal = np.sum(num)
     
         # Save previous probabilities
         self.history_pi[:, self.history_count] = self.probas.flatten()
         self.history_count += 1
         self.history_marginal[self.history_count] = marginal
     
-        # Normalize
         self.probas = num / marginal
     
-        # Optionally update emissions
+        # Update emissions
         if (self.history_count + self.start_year > 2023 and
             self.emissions.columns[-1] + 1 < self.indicators.columns[-1] + 1):
             self.update_emissions()

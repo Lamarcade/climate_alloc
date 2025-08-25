@@ -345,8 +345,9 @@ class Alloc():
         assert len(sim_files) == len(proba_files), "Incompatible file numbers"
     
         total_budgets = []
+        sharpes = []
     
-        for (sim_path, sim_sheet), (proba_path, proba_sheet) in tqdm(zip(sim_files, proba_files), desc = "Simulation number"):
+        for (sim_path, sim_sheet), (proba_path, proba_sheet) in tqdm(zip(sim_files, proba_files), total = 1000, desc = "Simulation number"):
             alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=sim_sheet)
     
             alloc.get_probas_simulation(path=proba_path, sheet_name=proba_sheet)
@@ -356,10 +357,33 @@ class Alloc():
     
             total_realized = df_run["realized"].sum()
             total_budgets.append(total_realized)
+            
+            sharpe_mean = df_run["sharpe"].mean()
+            
+            sharpes.append(sharpe_mean)
     
-        return df_run, total_budgets
+        return sharpes, total_budgets
 
+#%%
 
+    def cumulative_emissions(self, scenario = "Net Zero 2050"):
+        mus = pd.read_excel("Data/scenarios.xlsx", index_col = "Scenario")
+
+        emissions = Config.LAST_EM.copy()
+        emissions = emissions.drop("Real Estate (n=29)")
+        sce = emissions.copy()
+        while sce.columns[-1] < 2050:       
+            max_year = sce.columns[-1] +1
+            sce[max_year] = mus.loc[scenario, max_year] * sce[max_year-1] / 100 + sce[max_year-1]
+            sce = sce.copy()
+        cumulative_emissions = sce.sum(axis = 1)
+        cumulative_emissions.sort_values(ascending = False, inplace = True)
+        
+        plt.figure()
+        ax = cumulative_emissions.plot.barh()
+        ax.bar_label(ax.containers[0], fmt = "%.3g")
+        plt.title(f"Cumulative emissions for {scenario}")
+        
     
 #%%
 
@@ -368,13 +392,13 @@ class Alloc():
 # NZ : 32 times as many emissions in the start as in the end
 
 scenar_used = 6
-budget = 2e+08
+budget = 1e+08
 alloc = Alloc(rf = 0, budget=budget, sheet_name = scenar_used)
 alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
 
 abb = Config.INDEX2ABB[scenar_used]
 
-# Simulations with the lowest KL for each scenario
+# Simulations with the lowest KL for each scenario for 10 runs
 kl_scenar_best_sims = {0:3, 1:6, 2:10, 3:1, 4:4, 5:6, 6:9}
 
 GICS = Config.GICS.copy()
@@ -397,6 +421,7 @@ def test_plot():
     plt.ylabel("Budget for year (tCO2eq)")
     plt.xlabel("Year")
     plt.grid(True)
+    plt.legend()
     plt.savefig(f"Figs/Alloc/{abb}/carbon_traj_{abb}_{int(budget/1e+06)}Mt.png")
     plt.show()
 
@@ -446,10 +471,10 @@ def test_plot():
 
 #%%
 
-sim_files= [(f"Data/Simul/Test3/Test3_{i}.xlsx", scenar_used) for i in range(1,1001)]
-nocalib_files= [(f"Data/Simul/Test3/Nocalib_{i}.xlsx", scenar_used) for i in range(1,1001)]
+sim_files= [(f"Data/Simul/Test3/All/Test3_{i}.xlsx", scenar_used) for i in range(1,1001)]
+nocalib_files= [(f"Data/Simul/Test3/All/Nocalib_{i}.xlsx", scenar_used) for i in range(1,1001)]
 
-run, totals = alloc.run_multiple_allocations(sim_files, nocalib_files)
+sharpes, totals = alloc.run_multiple_allocations(sim_files, nocalib_files)
 
 plt.figure(figsize=(12,6))
 sns.histplot(totals, bins=20, kde=True, color="skyblue")
@@ -465,5 +490,15 @@ plt.legend()
 plt.tight_layout()
 plt.show()
 
-    
+plt.figure(figsize=(12,6))
+sns.histplot(sharpes, bins=20, kde=False, color="skyblue")
+
+plt.xlabel("Sharpe ratio")
+plt.ylabel("Frequency")
+plt.title("Distribution of time-averaged Sharpe ratios across runs")
+plt.legend()
+
+plt.tight_layout()
+plt.show()
+
     
