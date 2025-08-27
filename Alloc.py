@@ -6,6 +6,7 @@ Created on Wed Jun 25 16:42:10 2025
 """
 
 from Modelnu import Modelnu
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -25,7 +26,7 @@ import Config
 #%%
 class Alloc():
         
-    def __init__(self, rf, budget, short_sales = False, rf_params = False, sheet_name = 0):
+    def __init__(self, rf, budget, short_sales = False, rf_params = False, sheet_name = 0, order_returns = False):
         """
         Initializes a Portfolio instance.
 
@@ -56,7 +57,14 @@ class Alloc():
         K, n, T_em = self.scenario_emissions.shape
         self.time = T_em
         
-        self.return_stats()
+        self.GICS = Config.GICS.copy()
+        self.GICS.remove("Real Estate")
+        
+        
+        if order_returns:
+            self.specific_returns(scenario = Config.INDEX2SCENAR[sheet_name])
+        else:
+            self.return_stats()
         
     def update_year(self, probas):
         self.current_time +=1 
@@ -108,7 +116,7 @@ class Alloc():
             self.scenario_emissions = scenario_emissions
         
         
-    def return_stats(self):
+    def return_stats(self, specific = None):
         '''Computes the historical returns mean and covariance'''
         returns = pd.read_excel("Data/Stoxx_returns.xlsx", index_col = 0)
         returns['GICS Sector Name'] = returns.groupby('Instrument')['GICS Sector Name'].ffill()
@@ -119,6 +127,9 @@ class Alloc():
         
         returns = returns.dropna(subset=['Return', 'Sector'])
         
+        if specific is not None:
+            returns = returns[returns["Ticker"].isin(specific)]
+        
         sector_returns = returns.groupby(['Date', 'Sector'])['Return'].mean().unstack()
         sector_returns.drop(columns = ["Real Estate"], inplace = True)
         
@@ -128,6 +139,50 @@ class Alloc():
         
         self.n = len(self.mu)
         
+    def specific_returns(self, scenario):
+        returns = pd.read_excel("Data/Stoxx_returns.xlsx", index_col = 0)
+        returns['GICS Sector Name'] = returns.groupby('Instrument')['GICS Sector Name'].ffill()
+        returns = returns[['Date', 'GICS Sector Name', 'Instrument', 'Total Return']]
+        returns.columns = ['Date', 'Sector', 'Ticker', 'Return']
+        
+        returns['Date'] = pd.to_datetime(returns['Date'])
+        
+        returns = returns.dropna(subset=['Return', 'Sector'])
+        
+        self.cumulative_emissions(scenario = scenario)
+        
+        ce = self.ce.copy()
+        
+        select = pd.DataFrame()
+        if self.rf_params:
+            n = len(self.GICS[:-1])
+        else:
+            n = len(self.GICS)
+        
+        # Index of emitter ranks
+        dico = {a:(i/n) for (i,a) in enumerate(ce.index.str.replace(r"\s*\(n=\d+\)", "", regex=True))}
+        
+        for i in range(n):
+            sector = returns[returns["Sector"] == self.GICS[i]].groupby('Ticker').mean("Return")
+            sector.sort_values(by = "Return", ascending = False, inplace = True)
+            
+            rank = dico[self.GICS[i]]
+            
+            # First emitter : take the best return and so on with quantiles
+            ticker = sector.iloc[int(rank*(len(sector.index)-1))].name
+            
+            values = returns[returns["Ticker"] == ticker]
+            
+            select = pd.concat([select, values], axis = 0)
+        
+        select_returns = select.groupby(['Date', 'Sector'])['Return'].mean().unstack()
+        #select_returns.drop(columns = ["Real Estate"], inplace = True)
+        
+        self.mu = select_returns.mean()
+
+        self.sigma = select_returns.cov()
+        
+        self.n = len(self.mu)
     
     def simulate_returns(self, n_sim = 1000, horizon = 2050 - Config.FUTURE_START_YEAR):
         return np.random.multivariate_normal(self.mu, self.sigmas, size=(n_sim, horizon))
@@ -179,8 +234,11 @@ class Alloc():
             self.sigma.loc[rf_name, rf_name] = 0.0
             
             self.rf_params = True
+            
+            self.GICS += ["Risk-free"]
                 
             return self
+        
         
 #%% Stats
 
@@ -354,7 +412,8 @@ class Alloc():
                 
             if update_budget: 
                 #print(self.parts[t+1], " before updating")
-                self.parts[t+1] += self.parts[t]- realized
+
+                self.redistribute_budget(t, realized)
     
         return all_weights if log else weights
     
@@ -382,6 +441,19 @@ class Alloc():
             sharpes.append(sharpe_mean)
     
         return sharpes, total_budgets
+    
+    def redistribute_budget(self, t, realized):
+        
+        delta = realized - self.parts[t]
+
+        if t+1 < len(self.parts) and delta != 0:
+            future_sum = self.parts[t+1:].sum()
+            if future_sum > 0:
+                self.parts[t+1:] -= delta * (self.parts[t+1:] / future_sum)
+            else:
+                self.parts[t+1:] = 0.0
+
+
 
 #%%
 
@@ -398,11 +470,106 @@ class Alloc():
         cumulative_emissions = sce.sum(axis = 1)
         cumulative_emissions.sort_values(ascending = False, inplace = True)
         
+        self.ce = cumulative_emissions
+        
         plt.figure()
         ax = cumulative_emissions.plot.barh()
         ax.bar_label(ax.containers[0], fmt = "%.3g")
         plt.title(f"Cumulative emissions for {scenario}")
         
+    def dist_returns(self):
+        returns = pd.read_excel("Data/Stoxx_returns.xlsx", index_col = 0)
+        returns['GICS Sector Name'] = returns.groupby('Instrument')['GICS Sector Name'].ffill()
+        returns = returns[['Date', 'GICS Sector Name', 'Instrument', 'Total Return']]
+        returns.columns = ['Date', 'Sector', 'Ticker', 'Return']
+
+        returns['Date'] = pd.to_datetime(returns['Date'])
+
+        returns = returns.dropna(subset=['Return', 'Sector'])
+        n = len(GICS[:-1])
+        fig, axes = plt.subplots(2, n//2 + n%2)
+        for i in range(n):
+            test = returns[returns["Sector"] == GICS[i]].groupby('Ticker').mean("Return")
+            ax = axes[i%2, i//2]
+            sns.histplot(test, ax = ax)
+            ax.set_title(GICS[i])
+        fig.suptitle("Distribution of returns inside sectors")
+   
+#%%
+
+    def allocate_naive_investor(self, log=True, update_budget=True):
+    
+        K, n, T = self.scenario_emissions.shape
+        all_weights = []
+    
+        # Linear budget
+        self.parts = np.full(self.time, self.budget / self.time)
+    
+        prev_emissions = self.sim_emissions[Config.FUTURE_START_YEAR]
+    
+        for t in range(T-1):
+            self.current_time = t
+    
+            current_emissions = self.sim_emissions[t + Config.FUTURE_START_YEAR]
+    
+            if t > 0:
+
+                decarb_rate = (current_emissions - prev_emissions) / prev_emissions
+
+                expected_emissions = current_emissions * (1 + decarb_rate)
+            else:
+                # First year
+                expected_emissions = current_emissions.copy()
+    
+            prev_emissions = current_emissions.copy()
+    
+            # Expected constraint
+            def carbon_estimate(weights):
+                if self.rf_params:
+                    w = weights[:-1]
+                else:
+                    w = weights
+                return w.T.dot(expected_emissions.values)
+    
+            constraints = [
+                {'type': 'ineq', 'fun': lambda w, mb=self.parts[t]: mb - carbon_estimate(w)},
+                {'type': 'eq', 'fun': lambda w: np.sum(w) - 1}
+            ]
+            initial_weights = self.init_weights()
+            boundaries = self.bounds()
+    
+            result = minimize(self.neg_sharpe, x0=initial_weights,
+                              method='SLSQP',
+                              constraints=constraints,
+                              bounds=boundaries)
+            weights = result.x
+    
+            if log:
+                sharpe = self.get_sharpe(weights)
+                ret = self.get_return(weights)
+                risk = self.get_risk(weights)
+
+                carbon_naive = carbon_estimate(weights)
+                realized = self.true_carbon(weights)
+    
+                all_weights.append({
+                    'year': t + Config.FUTURE_START_YEAR,
+                    'weights': weights,
+                    'sharpe': sharpe,
+                    'return': ret,
+                    'risk': risk,
+                    'carbon_naive': carbon_naive,
+                    'realized': realized,
+                    'allocated_budget': self.parts[t]
+                })
+    
+            if update_budget:
+                    
+                self.redistribute_budget(t, realized)
+                
+        return all_weights if log else weights
+                        
+   
     
 #%%
 
@@ -411,9 +578,9 @@ class Alloc():
 # NZ : 32 times as many emissions in the start as in the end
 
 scenar_used = 5
-budget = 0
+budget = 5e+08
 
-alloc = Alloc(rf = 0.003, budget=budget, sheet_name = scenar_used)
+alloc = Alloc(rf = 0.003, budget=budget, sheet_name = scenar_used, order_returns = True)
 alloc.risk_free_stats()
 alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
 
@@ -500,7 +667,7 @@ def distribution_tests():
     sns.histplot(totals, bins=20, kde=True, color="skyblue")
     
     plt.axvline(budget, color="red", linestyle="--", linewidth=2, label=f"Max budget ({int(budget/1e+06)}Mt)")
-    plt.axvline(np.mean(totals), color="green", linestyle="--", linewidth=2, label=f"Mean of realized budgets")
+    plt.axvline(np.mean(totals), color="green", linestyle="--", linewidth=2, label="Mean of realized budgets")
     
     plt.xlabel("Realized budget")
     plt.ylabel("Frequency")
@@ -526,7 +693,7 @@ def distribution_tests():
 #sharpes, totals = distribution_tests()
 
 #%%
-num_test = 3
+num_test = 6
 sim_path = f"Data/Simul/Test3/All/Test3_{num_test}.xlsx"
 alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=scenar_used)
 alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
@@ -549,3 +716,6 @@ plt.grid(True)
 plt.legend()
 
 plt.show()
+
+history_naive = alloc.allocate_naive_investor()
+    
