@@ -8,10 +8,10 @@ Created on Fri Nov 14 10:55:12 2025
 import numpy as np
 import pandas as pd
 
-CENTRAL_STD = 1e12
+CENTRAL_STD = 1e10
 BETA = 0.2
 NUS = np.array([2, -3, 1, -0.5, 1.5, -1.0, -1.5, 3.0, -1.0, -0.5, 0])*1e4
-SIGMAS = 1e12 * np.ones(len(NUS))
+SIGMAS = 1e10 * np.ones(len(NUS))
 
 N_YEARS = 500
 FUTURE_START_YEAR = 2023
