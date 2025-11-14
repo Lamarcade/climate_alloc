@@ -82,13 +82,15 @@ class Alloc():
         
         emissions = Config.LAST_EM.copy()
         emissions = emissions.drop("Real Estate (n=29)")
+        
+        nus = Config.NUS_ORDER.copy()
         if sim:
             # Simulated rates
             mus = pd.read_excel(path, index_col = 0, sheet_name = sheet_name)
             em = emissions.copy()
             ind = em.index.str.replace(r"\s*\(n=\d+\)", "", regex=True)
             em.index = ind
-            mus.reindex(ind)
+            mus = mus.reindex(ind)
             while em.columns[-1] < 2050:       
                 max_year = em.columns[-1] +1
                 em[max_year] = mus[max_year] * em[max_year-1] / 100 + em[max_year-1]
@@ -99,9 +101,12 @@ class Alloc():
             sces = []
             for scenar in mus.index:
                 sce = emissions.copy()
+                ind = sce.index.str.replace(r"\s*\(n=\d+\)", "", regex=True)
+                sce.index = ind
+                nus = nus.reindex(ind)
                 while sce.columns[-1] < 2050:       
                     max_year = sce.columns[-1] +1
-                    sce[max_year] = mus.loc[scenar, max_year] * sce[max_year-1] / 100 + sce[max_year-1]
+                    sce[max_year] = (nus + mus.loc[scenar, max_year]).squeeze() * sce[max_year-1] / 100 + sce[max_year-1]
                     sce = sce.copy()
                 sces.append((scenar, sce))
                 
@@ -453,7 +458,47 @@ class Alloc():
             else:
                 self.parts[t+1:] = 0.0
 
+    def compare_strat(self, sim_files, proba_files, update_budget = True):
 
+        assert len(sim_files) == len(proba_files), "Incompatible file numbers"
+    
+        tb, tbn = [], []
+        sh, shn = [], []
+        tr, trn = [], []
+    
+        for (sim_path, sim_sheet), (proba_path, proba_sheet) in tqdm(zip(sim_files, proba_files), total = 1000, desc = "Simulation number"):
+            alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
+            alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=sim_sheet)
+    
+            alloc.get_probas_simulation(path=proba_path, sheet_name=proba_sheet)
+    
+            run = alloc.allocate_over_time(log=True, update_budget = update_budget)
+            df_run = pd.DataFrame(run)
+    
+            total_realized = df_run["realized"].sum()
+            tb.append(total_realized)
+            
+            sharpe_mean = df_run["sharpe"].mean()
+            
+            returns = df_run["return"].sum()
+            
+            sh.append(sharpe_mean)
+            tr.append(returns)
+            
+            history_naive = alloc.allocate_naive_investor(log=True, update_budget = update_budget)
+            df_naive = pd.DataFrame(history_naive)
+            
+            total_realized = df_run["realized"].sum()
+            tbn.append(total_realized)
+            
+            sharpe_mean = df_naive["sharpe"].mean()
+            
+            returns = df_naive["return"].sum()
+            
+            shn.append(sharpe_mean)
+            trn.append(returns)
+    
+        return tb, tbn, sh, shn, tr, trn
 
 #%%
 
@@ -578,9 +623,10 @@ class Alloc():
 # NZ : 32 times as many emissions in the start as in the end
 
 scenar_used = 5
-budget = 5e+08
+budget = 1e+09
 
-alloc = Alloc(rf = 0.003, budget=budget, sheet_name = scenar_used, order_returns = True)
+#alloc = Alloc(rf = 0.003, budget=budget, sheet_name = scenar_used, order_returns = True)
+alloc = Alloc(rf = 0, budget=budget, sheet_name = scenar_used, order_returns = True)
 alloc.risk_free_stats()
 alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
 
@@ -690,10 +736,19 @@ def distribution_tests():
     
     return sharpes, totals
 
+def return_tests():
+    sim_files= [(f"Data/Simul/Test3/All/Test3_{i}.xlsx", scenar_used) for i in range(1,1001)]
+    nocalib_files= [(f"Data/Simul/Test3/All/Nocalib_{i}.xlsx", scenar_used) for i in range(1,1001)]
+    
+    tb, tbn, sh, shn, tr, trn = alloc.compare_strat(sim_files, nocalib_files, update_budget = True)
+    
+    
+    return tb, tbn, sh, shn, tr, trn
+
 #sharpes, totals = distribution_tests()
 
 #%%
-num_test = 6
+num_test = 1
 sim_path = f"Data/Simul/Test3/All/Test3_{num_test}.xlsx"
 alloc.emissions_matrix(sim=True, path=sim_path, sheet_name=scenar_used)
 alloc.cut_budget(start = 5e+07, end = 5e+06, linear=False, alpha = 0.3)
