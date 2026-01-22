@@ -13,6 +13,10 @@ BETA = 0.2
 NUS = np.array([2, -3, 1, -0.5, 1.5, -1.0, -1.5, 3.0, -1.0, -0.5, 0])*1e4
 SIGMAS = 1e10 * np.ones(len(NUS))
 
+VAR_BIS = 1e12
+SIGMAS_BIS = np.array([1e14, 1e14, 1e14, 1e14, 1e13, 1e13, 1e13, 1e13, 1e12, 1e12, 1e12])
+NUS_BIS = np.array([2e7, -3e7, 1e7, -0.5e6, 1.5e6, -1e6, -3e6, 3e6, -1.0e5, -0.5e5, 1.5e5])
+
 N_YEARS = 500
 FUTURE_START_YEAR = 2023
 START_YEAR = 2012
@@ -61,3 +65,8 @@ NUS_FIXED = -np.sort(-NUS_2)
 NUS_ORDER = pd.DataFrame(NUS_FIXED, index = HISTO_ORDER, columns = ["Spreads"])
 
 SIGMAS_ORDER = pd.DataFrame(SIGMAS, index = HISTO_ORDER, columns = ["Variances"])
+
+NUS_NEW = pd.DataFrame(NUS_BIS, index = HISTO_ORDER, columns = ["Spreads"])
+SIGMAS_NEW = pd.DataFrame(SIGMAS_BIS, index = HISTO_ORDER, columns = ["Variances"])
+KAPPA = 2
+NEW_VAR = 1e13

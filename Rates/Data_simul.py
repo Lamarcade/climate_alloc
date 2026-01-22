@@ -211,28 +211,6 @@ def simul_parameters(central_std, beta, nus, sigmas, scenar_index = index_used, 
     dis = pd.concat([dis, new_dis_df], axis=1)
             
     return(dis)
-
-# =============================================================================
-# for scenar_used in all_scenar:
-#     
-#     #dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
-#     
-#     #with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
-#     #    dis.to_excel(params_writer, sheet_name = scenar_used[:30])
-#     
-#     for i in tqdm(range(1,1001)):
-# 
-#         np.random.seed(42 + i)
-#     
-#         file_path = f"Data/Simul/Test3/All/Test3_{i}.xlsx"
-#     
-#         for scenar_used in all_scenar:
-#             dis = simul_parameters(central_std, beta, nus, sigmas, scenar_name = scenar_used)
-#     
-#             with pd.ExcelWriter(file_path, mode='a', if_sheet_exists="overlay") as params_writer:
-#                 dis.to_excel(params_writer, sheet_name = scenar_used[:30])
-# =============================================================================
-
 #%%
 nus_df = Config.NUS_ORDER
 sigmas_df = Config.SIGMAS_ORDER
@@ -251,7 +229,7 @@ def simul_order(central_std, beta, nus_df, sigmas_df, scenar_index = index_used,
     
     dis = pd.DataFrame({2023: di}, index = Config.HISTO_ORDER)
     
-    emissions = Config.EM_LAST.loc[Config.HISTO_ORDER].squeeze()
+    emissions = Config.LAST_EM.loc[Config.HISTO_ORDER].squeeze()
     new_dis = {}
     for col in mus.columns[mus.columns > 2023].values:
         mu_new = mus.loc[locmu, col]
@@ -274,6 +252,30 @@ def simul_order(central_std, beta, nus_df, sigmas_df, scenar_index = index_used,
     dis = pd.concat([dis, new_dis_df], axis=1)
             
     return(dis)
+
+
+
+for scenar_used in all_scenar:
+    
+    dis = simul_order(central_std, beta, nus_df, sigmas_df, scenar_name = scenar_used)
+    
+    with pd.ExcelWriter('Data/full_fixed_params.xlsx', mode='a', if_sheet_exists = "overlay") as params_writer:  
+        dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+    
+# =============================================================================
+#     for i in tqdm(range(1,1001)):
+# 
+#         np.random.seed(42 + i)
+#     
+#         file_path = f"Data/Simul/Test3/All/Test3_{i}.xlsx"
+#     
+#         for scenar_used in all_scenar:
+#             dis = simul_order(central_std, beta, nus_df, sigmas_df, scenar_name = scenar_used)
+#     
+#             with pd.ExcelWriter(file_path, mode='a', if_sheet_exists="overlay") as params_writer:
+#                 dis.to_excel(params_writer, sheet_name = scenar_used[:30])
+# 
+# =============================================================================
 
 # =============================================================================
 # for scenar_used in all_scenar:

@@ -12,6 +12,8 @@ from scipy.stats import multivariate_normal
 import sys
 import matplotlib.pyplot as plt
 
+import Config
+
 # Scenar : index 1 to k
 # mus[scenar,t] = mu_{Delta_t},t
 #(d_{i,t})_i = intensities
@@ -24,7 +26,7 @@ import matplotlib.pyplot as plt
 class Modelnu():  
     
 #%% Initialization
-    def __init__(self, Time, initial_law = np.array([0.35, 0.15, 0.25, 0.25]), data_file = "Data/Stoxx_data_Scope12.xlsx", history = True):
+    def __init__(self, initial_law = np.ones(7)/7, data_file = "Data/history_processed.xlsx", has_history = True, date_max = 2051):
         '''
         Initialize an instance of the model computing the filter and performing the EM algorithm
 
@@ -43,115 +45,124 @@ class Modelnu():
 
         '''
         self.rng = np.random.default_rng()
-        self.Time = Time 
+        
+        self.start_year = 2012
+        end_year = 2023
+        
+        self.years = range(self.start_year, date_max)
+        self.Time = len(self.years)
         
         # Initial probabilities
         
         # Format to a column matrix for storage of probabilities
         initial = initial_law[:, np.newaxis]
         self.pi = initial
+        self.K = len(initial_law)
         
         # Probabilities updated for the filter
         self.probas = self.pi
         
         # Keep track of the current time and all the probabilities
         self.history_count = 0
-        self.history_marginal = np.ones(Time)
-        self.history_pi = initial * np.ones((len(self.pi), Time))
+        self.history_marginal = pd.DataFrame(np.ones(self.Time))
+        self.history_pi = pd.DataFrame(initial * np.ones((len(self.pi), self.Time)))
         
         # Carbon and revenue data per company
-        df = pd.read_excel(data_file)
-        df = df.drop(df.columns[0], axis = 1)
-        self.df = df
         
-        self.start_year = 2009
+        history = pd.read_excel(data_file, index_col = 0)
         
-        for i in range(14, -1, -1):
-            df["Scope12 Y-{i}".format(i = i)] = df["Scope 1 Y-{i}".format(i = i)] + df["Scope 2 Y-{i}".format(i = i)]
+        self.history = history
+        
+        history = history[
+        (history["Year"] >= self.start_year) &
+        (history["Year"] <= end_year)
+        ].copy()
+        
+        emission_cols = ['CO2 Equivalent Emissions Direct, Scope 1', 'CO2 Equivalent Emissions Indirect, Scope 2', 'Scope12']
+        
+        keep_cols = ['GICS Sector Name'] + emission_cols
+        
+        last = history[history["Year"] == '2023'][keep_cols]
+        
+        last = last.groupby('GICS Sector Name').sum().sort_values('Scope12', ascending = False)
+        
+        self.last = last
+        self.n = len(last)
+        
        
-        indicators = df[["Instrument","GICS Sector Name"]].copy()
-        
-        for i in range(13, -1, -1):
-            # Actual year / Former year from Y-13 to Y-0
-            #indicators["Rate Y-{i}".format(i = i)] = 100 * df["Total Y-{i}".format(i = i)] / df["Total Y-{j}".format(j = i+1)]
-            # Keep as a percentage, with absolute percentage increase to account for negative values
+        history.sort_values(["Instrument", "Year"], inplace=True)
 
-            indicators["Rate Y-{i}".format(i = i)] = 100 * (df["Scope12 Y-{i}".format(i = i)] - df["Scope12 Y-{j}".format(j = i+1)]) / abs(df["Scope12 Y-{j}".format(j = i+1)])
+        history["Scope12_lag"] = history.groupby("Instrument")["Scope12"].shift(1)
         
-        # Reduce number of rates and drop NaN
-        indicators.replace([np.inf, -np.inf], np.nan, inplace = True)
+        history["Rate"] = 100 * (
+            (history["Scope12"] - history["Scope12_lag"]) /
+            history["Scope12_lag"].abs()
+        )
         
-        #ind = indicators.dropna()
-        #ind = ind.iloc[:6]
+        history.replace([np.inf, -np.inf], np.nan, inplace=True)
         
-        # Use sector decarbonation rates
-        sectors = indicators.copy()
-        #sectors.drop(sectors.columns[0], axis = 1, inplace = True)
+        df_rates = history.dropna(subset=["Rate", "Scope12_lag"]).copy()
         
-        df_merged = sectors.merge(df, on=["Instrument", "GICS Sector Name"])
-
-        # Real Estate decarbonation rates have many outliers
-        df_merged = df_merged[df_merged["GICS Sector Name"] != "Real Estate"]
-
-        decarbonation_rates = {}
-        
-        for i in range(13, -1, -1):
-            numerator = df_merged.groupby("GICS Sector Name").apply(
-                lambda x: np.nansum(x[f"Rate Y-{i}"] * x[f"Scope12 Y-{i+1}"])
-            )
-            denominator = df_merged.groupby("GICS Sector Name")[f"Scope12 Y-{i+1}"].sum()
-            
-            decarbonation_rates[f"Decarbonation Rate Y-{i}"] = numerator / denominator
-        
-        decarbonation_df = pd.DataFrame(decarbonation_rates)
-        
-        # Real Estate decarbonation rates have many outliers
-        #decarbonation_df.drop("Real Estate", inplace = True)
-        
+        decarbonation_df = (
+        df_rates
+        .groupby(["GICS Sector Name", "Year"])
+        .apply(
+            lambda x: np.nansum(x["Rate"] * x["Scope12_lag"]) /
+                      np.nansum(x["Scope12_lag"])
+            if np.nansum(x["Scope12_lag"]) != 0 else np.nan
+        )
+        .unstack("Year")
+        .sort_index(axis=1)
+        )
+    
         self.indicators = decarbonation_df
-        #print(sectors.columns)
-        
-        # Central carbon rates
-        self.mus = pd.DataFrame(np.zeros((len(initial_law),Time)))
         
         # Historical central carbon rate
         
-        annual_mean_rates = {}
-
-        for i in range(13, -1, -1):
-            numerator = np.nansum(df_merged[f"Rate Y-{i}"] * df_merged[f"Scope12 Y-{i+1}"])
-            denominator = np.nansum(df_merged[f"Scope12 Y-{i+1}"])
-            
-            if denominator != 0:
-                annual_mean_rates[f"Decarbonation Rate Y-{i}"] = numerator / denominator
-            else:
-                annual_mean_rates[f"Decarbonation Rate Y-{i}"] = np.nan
+        annual_mean_rates = (
+            df_rates
+            .groupby("Year")
+            .apply(
+                lambda x: np.nansum(x["Rate"] * x["Scope12_lag"]) /
+                          np.nansum(x["Scope12_lag"])
+                if np.nansum(x["Scope12_lag"]) != 0 else np.nan
+            )
+        )
         
-        annual_mean_df = pd.DataFrame(annual_mean_rates, index=[0]).T
-        annual_mean_df.columns = ["Annual Mean Decarbonation Rate"]
+        annual_mean_df = annual_mean_rates.to_frame(
+            name="Annual Mean Decarbonation Rate"
+        )
         
         self.rates = annual_mean_df
+
+        total_numerator = np.nansum(
+            df_rates["Rate"] * df_rates["Scope12_lag"]
+        )
         
-        total_numerator = np.nansum([
-            annual_mean_df["Annual Mean Decarbonation Rate"].iloc[i] * np.nansum(df_merged[f"Scope12 Y-{i+1}"]) 
-            for i in range(13, -1, -1)
-        ])
-        total_denominator = np.nansum([
-            np.nansum(df_merged[f"Scope12 Y-{i+1}"]) 
-            for i in range(13, -1, -1)
-        ])
+        total_denominator = np.nansum(
+            df_rates["Scope12_lag"]
+        )
         
-        overall_mean_decarbonation_rate = total_numerator / total_denominator if total_denominator != 0 else np.nan
+        overall_mean_decarbonation_rate = (
+            total_numerator / total_denominator
+            if total_denominator != 0 else np.nan
+        )
+
+        # Central carbon rates
+        self.mus = pd.DataFrame(np.zeros((len(initial_law),self.Time)))
             
         # Duration of the historical data
         self.T0 = self.indicators.shape[1] 
   
         for t in range(self.T0):
             self.mus.iloc[:, t] = overall_mean_decarbonation_rate * np.ones(len(initial_law)) 
-            
+        
+        # Rename?
+        self.mus.columns = [self.start_year + i for i in range(self.mus.shape[1])]
+        
         self.emissions_by_sectors()
     
-    def compute_mean_rates(self, rates,emissions):
+    def compute_mean_rates(self, rates, emissions):
         dt = np.sum(rates*emissions/np.sum(emissions))
         return(dt)
     
@@ -177,21 +188,13 @@ class Modelnu():
         '''
         
         # Do not keep the last nu to avoid a constraint
-        self.theta = np.concatenate([np.array([central_std, beta]), nus[:-1], sigmas])
+        self.theta = np.concatenate([np.array([central_std, beta]), nus, sigmas])
         self.theta = self.theta.flatten()
         assert len(nus) == len(sigmas), "Mismatch in dimensions of nus and sigmas"
         # 0 : Central std
         # 1 : Beta
-        # 2:1+n (excluded) : Nus
-        # 1+n:1+2n : Sigmas^2
-
-    def rename_rates(self):
-        start_year = 2010
-        
-        for i in range(0, 14):
-            self.indicators.rename(columns = {f"Decarbonation Rate Y-{i}": 2023-i}, inplace = True)
-        #self.mus.columns = [str(start_year + i) for i in range(self.mus.shape[1])]
-        self.mus.columns = [start_year + i for i in range(self.mus.shape[1])]
+        # 2:2+n (excluded) : Nus
+        # 2+n:1+2n : Sigmas^2
 
     def get_scenario_data(self, path = "Data/scenarios.xlsx", date_max = 2051):
         rates = pd.read_excel(path)
@@ -207,7 +210,7 @@ class Modelnu():
 
         # First columns are an index and NA values
         simul = simul[simul.columns[2:]]
-        simul_sorted = simul.sort_values(by=2021, ascending=False).reset_index(drop=True)
+        simul_sorted = simul.sort_values(by=2023, ascending=False).reset_index(drop=True)
         
         # The sector with the highest historical rate gets the highest rate 
         # from the simulation, and so on
@@ -257,7 +260,7 @@ class Modelnu():
         
        
     def future_data_df(self, simul_df, scenar_df, date_max=2051):
-        start_year = 2023
+        start_year = 2024
         self.start_year = start_year - 1
     
         self.mus = scenar_df.copy()
@@ -265,20 +268,41 @@ class Modelnu():
 
         simul_aligned = simul_df.reindex(self.indicators.index)
     
+        # Remove historical part
         self.indicators = self.indicators.iloc[:, :0]
         self.indicators = pd.concat([self.indicators, simul_aligned], axis=1)   
        
     def emissions_by_sectors(self):
-        self.emissions = self.df[[f"Scope12 Y-{i}" for i in range(14, -1, -1)] + ["GICS Sector Name"]].groupby(by = "GICS Sector Name").sum()
-        for i in range(14, -1, -1):
-            self.emissions.rename(columns = {f"Scope12 Y-{i}": 2023-i}, inplace = True)
-        #for i in range(2024, 2024+len(self.indicators)):
-        #    self.emissions[i] = self.indicators[i] * self.emissions[i-1] / 100 + self.emissions[i-1]
+        emissions = (
+            self.history[
+                (self.history["Year"] >= self.start_year) &
+                (self.history["Year"] <= 2023)
+            ]
+            .groupby(["GICS Sector Name", "Year"])["Scope12"]
+            .sum()
+            .unstack("Year")
+            .sort_index(axis=1)
+        )
+    
+        self.emissions = emissions.copy()
             
     def update_emissions(self):
-        max_year = self.emissions.columns[-1] +1
-        self.emissions[max_year] = self.indicators[max_year] * self.emissions[max_year-1] / 100 + self.emissions[max_year-1]
+    
+        last_year = self.emissions.columns.max()
+        next_year = last_year + 1
+    
+        if next_year not in self.indicators.columns:
+            raise ValueError(
+                f"Decarbonation rates not available for year {next_year}"
+            )
+    
+        self.emissions[next_year] = (
+            self.indicators[next_year] * self.emissions[last_year] / 100
+            + self.emissions[last_year]
+        )
+    
         self.emissions = self.emissions.copy()
+
 
 #%% Evaluation functions    
  
@@ -314,17 +338,17 @@ class Modelnu():
         n = len(intensities)
         
         # cov_inverse
-        diago = np.diag( np.array([cov]) / theta[1+n:])
+        diago = np.diag( np.array([cov]) / theta[2+n:])
         #denom = (1 + np.ones(n).dot(diago).dot(np.ones(n)))
         # Simplified formula
-        denom = 1 + cov * np.sum(1/theta[1+n:])
+        denom = 1 + cov * np.sum(1/theta[2+n:])
             
         inverse = 1/ (cov) * (diago - diago.dot(np.ones((n, n))).dot(diago) / denom)
     
         # determinant
         # cov**n * det(D_{j,t}) * denom
         
-        det = np.prod(theta[1+n:]) * denom
+        det = np.prod(theta[2+n:]) * denom
         #det = np.exp(np.sum(np.log(theta[1+n:])))
         #print("det1", det)
         #print("det", np.exp(np.sum(np.log(theta[1+n:]))))
@@ -339,7 +363,7 @@ class Modelnu():
         # self.mus.iloc[scenar, t] =  mu is a single value
         # Add back nu_n as the opposite of the sum of the (nu_i)i
         
-        vector = (intensities - (self.mus.iloc[scenar, t] + np.concatenate([theta[2:1+n], [-np.sum(theta[2:1+n])]])))
+        vector = (intensities - (self.mus.iloc[scenar, t] + theta[2:n+2]))
        # print("vector", vector)
 
         inside = -1/2 * vector.dot(inverse).dot(vector)
@@ -364,11 +388,11 @@ class Modelnu():
         cov = theta[0] + theta[1] * (previous_intensity - mu)**2
     
         # Weights (diagonal elements of D)
-        d = theta[1 + n:]
+        d = theta[2 + n:]
         d_inv = 1 / d
         denom = 1 + cov * np.sum(d_inv)
     
-        nu = np.concatenate([theta[2:1 + n], [-np.sum(theta[2:1 + n])]])
+        nu = theta[2:n+2]
     
         vector = intensities - (mu + nu)
     
@@ -389,17 +413,18 @@ class Modelnu():
     
     def explicit_density_vec(self, theta, intensities, previous_intensity, scenars, t, is_log):
         n = len(intensities)
-        theta_shifts = theta[2:1+n]
-        last_component = -np.sum(theta_shifts)
-        theta_total = np.concatenate([theta_shifts, [last_component]])
-        theta_cov_terms = theta[1+n:]
+        #theta_shifts = theta[2:1+n]
+        #last_component = -np.sum(theta_shifts)
+        #theta_total = np.concatenate([theta_shifts, [last_component]])
+        theta_total = theta[2:2+n]
+        theta_cov_terms = theta[2+n:]
         sum_inv_cov = np.sum(1 / theta_cov_terms)
     
         results = []
     
         for scenar in scenars:
-            mu = self.mus.iloc[scenar, t]
-            cov = theta[0] + theta[1] * (previous_intensity - mu) ** 2
+            mu, mu_old = self.mus.loc[scenar, t], self.mus.loc[scenar, t-1]
+            cov = theta[0] + theta[1] * (previous_intensity - mu_old) ** 2
     
             diago = np.diag(np.array([cov]) / theta_cov_terms)
             denom = 1 + cov * sum_inv_cov
@@ -479,11 +504,11 @@ class Modelnu():
         mu_vec = self.mus.iloc[:, t].values          # Shape: (S,)
         cov = theta[0] + theta[1] * (previous_intensity - mu_vec) ** 2  # Shape: (S,)
         
-        d = theta[1 + n:]
+        d = theta[2 + n:]
         d_inv = 1 / d
         denom = 1 + cov * np.sum(d_inv)              # Shape: (S,)
         
-        nu = np.concatenate([theta[2:1 + n], [-np.sum(theta[2:1 + n])]])  # Shape: (n,)
+        nu = theta[2:2+n]  # Shape: (n,)
     
         # Shape: (S, n)
         vector = intensities[None, :] - (mu_vec[:, None] + nu[None, :])
@@ -549,7 +574,7 @@ class Modelnu():
         self.history_marginal[self.history_count] = marginal
 
         self.probas = num/marginal
-        if self.history_count + self.start_year > 2023 and self.emissions.columns[-1] +1 < self.indicators.columns[-1] +1:
+        if self.history_count + self.start_year > 2024 and self.emissions.columns[-1] +1 < self.indicators.columns[-1] +1:
             self.update_emissions()
         #print(self.probas)
         if get_probas:
@@ -577,28 +602,27 @@ class Modelnu():
         '''
     
         # Compute scenario densities (S x 1)
-        density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count)
+        density_val = self.full_density(self.theta, intensities, previous_intensity, self.history_count + 2 + self.start_year)
     
         # Update probabilities via Bayes rule
         num = self.probas * density_val  # Element-wise multiplication (S x 1)
         marginal = np.sum(num)
     
         # Save previous probabilities
-        self.history_pi[:, self.history_count] = self.probas.flatten()
+        self.history_pi[self.history_count] = self.probas.flatten()
         self.history_count += 1
         self.history_marginal[self.history_count] = marginal
     
         self.probas = num / marginal
     
         # Update emissions
-        if (self.history_count + self.start_year > 2023 and
+        # Start filter in 2014
+        if (self.history_count + 2 + self.start_year >= 2024 and
             self.emissions.columns[-1] + 1 < self.indicators.columns[-1] + 1):
             self.update_emissions()
     
         if get_probas:
             return self.probas
-
- 
         
 #%% EM functions
     def hist_log_lk(self):
@@ -624,11 +648,12 @@ class Modelnu():
         '''
         q1 = 0
         # At t=0 use a previous mean rate of 0
-        q1 = - np.dot(self.full_density(theta, full_intensities.iloc[:,0], 0 * full_intensities.iloc[:,0].mean(axis = 0), 0, is_log = True).T, self.probas).item()
-        for t in range(1,full_intensities.shape[1]):
+        q1 = - np.dot(self.full_density(theta, full_intensities.iloc[:,0], 0 * full_intensities.iloc[:,0].mean(axis = 0), self.start_year+1, is_log = True).T, self.probas).item()
+        for t in range(self.start_year + 2,full_intensities.columns[-1] +1):
+            #print("tttt", t)
             # Parameters central std, betas, nus are used in the density here
             #q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t+1], full_intensities.iloc[:,t].mean(axis = 0), t, is_log = True).T, self.probas).item()
-            q1 -= np.dot(self.full_density(theta, full_intensities.iloc[:,t], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]), t, is_log = True).T, self.probas).item()
+            q1 -= np.dot(self.full_density(theta, full_intensities.loc[:,t], self.compute_mean_rates(full_intensities.loc[:,t-1], self.emissions[t-2]), t, is_log = True).T, self.probas).item()
         return q1
     
     def q2(self, pi):
@@ -697,7 +722,7 @@ class Modelnu():
         bounds = [
         (epsilon, None),                 # theta[0] > 0
         (epsilon, 1 - epsilon),    # 0 < theta[1] < 1
-    ] + [(None, None)] * (n-1) + [(epsilon, None)] * n  # Positivité pour theta[2+n : 2+2n]
+    ] + [(None, None)] * (n) + [(epsilon, None)] * n  # Positivity theta[2+n : 2+2n]
 
         def check_bounds(theta, bounds):
             for i, (value, (lower, upper)) in enumerate(zip(theta, bounds)):
@@ -762,7 +787,7 @@ class Modelnu():
         '''
         expected_loglk = [0]
         loglk = [self.hist_log_lk()]
-        self.emissions_by_sectors()
+        #self.emissions_by_sectors()
         for l in range(n_iter):
             if reset_probas:
                 self.probas = np.ones(len(self.mus))/len(self.mus)
@@ -774,15 +799,15 @@ class Modelnu():
             
             # Reset time, which is updated at every filter step 
             
-            all_probas = np.zeros((len(self.mus), full_intensities.shape[1]))
+            all_probas = np.zeros((len(self.mus), len(range(self.start_year + 2, full_intensities.columns[-1] +2))))
                 
             self.history_count = 0
-            for t in range(full_intensities.shape[1]):
-                #print("t = ", t)
+            for t in range(self.start_year + 2, full_intensities.columns[-1] +1):
+                print("t = ", t)
                 #print("emissions t = ", self.start_year + t)
                 # Update probabilities thanks to the filter
 
-                all_probas[:,t] = self.filter_step(full_intensities.iloc[:,t], self.compute_mean_rates(full_intensities.iloc[:,t], self.emissions[self.start_year + t]), get_probas = True).flatten()
+                all_probas[:,self.history_count] = self.filter_step(full_intensities.loc[:,t], self.compute_mean_rates(full_intensities.loc[:,t-1], self.emissions[t-2]), get_probas = True).flatten()
                 #print("Probas",  all_probas[:, t])
                 
                 #print("Indicators time ", full_intensities.columns[t])
@@ -798,3 +823,35 @@ class Modelnu():
         if get_all_probas:
             return expected_loglk, loglk, all_probas
         return expected_loglk, loglk
+    
+    
+#%%
+a = Modelnu()
+
+sigmas = Config.SIGMAS_ORDER["Variances"].values
+#central_var = 5
+central_var = Config.CENTRAL_STD
+#beta = 0.3
+beta = Config.BETA
+nus = Config.NUS_ORDER["Spreads"].values 
+a.initialize_parameters(central_var, beta, nus, sigmas)
+es = a.emissions.copy()
+
+simul = pd.read_excel("Data/ordered.xlsx", index_col = 0, sheet_name = 0)
+ind = a.indicators.copy()
+
+a.get_scenario_data()
+
+# =============================================================================
+# for col in range(2014,2024):
+#     a.filter_step(ind[col], a.compute_mean_rates(a.indicators.loc[:,col-1], a.emissions[int(col)-2]))
+# 
+# future_probas = pd.DataFrame()
+# 
+# a.filter_step(simul[2024], a.compute_mean_rates(a.indicators.loc[:,2023], a.emissions[int(col)-2]))
+# a.indicators[2024] = simul[2024]
+# for col in range(2025,2051):
+#     pb = a.filter_step(simul[col], a.compute_mean_rates(simul[col-1], a.emissions[int(col)-2]), get_probas = True)
+#     a.indicators[col] = simul[col]
+#     future_probas[col] = pb.flatten()    
+# =============================================================================

@@ -1,47 +1,152 @@
 # -*- coding: utf-8 -*-
 """
-Created on Thu Jul 24 16:17:14 2025
+Created on Fri Nov 14 11:03:41 2025
 
 @author: LoïcMARCADET
 """
-import pandas as pd
+
 import numpy as np
+import pandas as pd
 
-history = pd.read_excel("Data/Stoxx_revenuedate.xlsx", index_col = 0)
+data_file = "Data/stoxx_1311.xlsx"
 
-history["CDPScope12"] = history["CDP CO2 Equivalent Emissions Direct Scope 1"] + history["CDP CO2 Equivalent Emissions Indirect Scope 2"]
-history["CDPScope123"] = history["CDP CO2 Equivalent Emissions Direct Scope 1"] + history["CDP CO2 Equivalent Emissions Indirect Scope 2"] + history["CDP CO2 Equivalent Emissions Indirect Scope 3"]
+history = pd.read_excel(data_file, index_col = 0)
+
+df_valid = history[history["Financial Period Absolute"].notna()]
+
+instruments = df_valid["Instrument"].unique()
+
+history = history[history["Instrument"].isin(instruments)]
+
+history['Year'] = history['Financial Period Absolute'].str.extract(r'(\d+)').astype(str)
+
+history["NACE Classification"] = history.groupby("Instrument")["NACE Classification"].ffill()
+history["GICS Sector Name"] = history.groupby("Instrument")["GICS Sector Name"].ffill()
+
+history = history[history["Year"].astype(int) >= 2012]
+
+history = history.drop_duplicates(["Instrument", "Year"], keep = 'last')
+
+def filter_jumps(history):
+    
+    cols = ['CO2 Equivalent Emissions Direct, Scope 1',	'CO2 Equivalent Emissions Indirect, Scope 2']
+
+    epsilon = 1e1 
+    threshold = 1e3  
+    
+    df = history.copy()
+
+    df["Year"] = df["Year"].astype(int)
+    
+    df = df.sort_values(["Instrument", "Year"]).reset_index(drop=True)
+    
+    df_before = df.copy()
+
+    def detect_double_jump(group):
+    
+        for c in cols:
+            values = group[c].values.astype(float)
+    
+            ratios = []
+            for i in range(len(values) - 1):
+                v1, v2 = values[i], values[i+1]
+                if pd.isna(v1) or pd.isna(v2):
+                    ratios.append(np.nan)
+                    continue
+                ratios.append((max(v1, v2) + epsilon) / (min(v1, v2) + epsilon))
+            ratios = np.array(ratios)
+    
+            for i in range(1, len(values) - 1):
+                jump_before = ratios[i-1] >= threshold
+                jump_after = ratios[i] >= threshold
+                
+                if jump_before and jump_after:
+                    values[i] = np.nan
+    
+            group[c] = values
+    
+        return group
+
+
+    dfa = df.groupby("Instrument", group_keys=False).apply(detect_double_jump)
+    
+    def jump_last_year(group):
+        if group["Year"].nunique() <= 2:
+            return group
+        
+        years_sorted = np.sort(group["Year"].unique())
+    
+        last_year = years_sorted[-1]
+        prev_year = years_sorted[-2]
+    
+        for c in cols:
+            v_prev = group.loc[group["Year"] == prev_year, c].values[0]
+            v_last = group.loc[group["Year"] == last_year, c].values[0]
+    
+            if pd.isna(v_prev) or pd.isna(v_last):
+                continue
+    
+            ratio = (max(v_prev, v_last) + epsilon) / (min(v_prev, v_last) + epsilon)
+    
+            if ratio >= threshold:
+                group.loc[group["Year"] == last_year, c] = np.nan
+    
+        return group
+
+
+    df = dfa.groupby("Instrument", group_keys=False).apply(jump_last_year)
+    
+    def changed(a, b):
+        return (
+            (~a.isna() & b.isna())
+            | (a.isna() & ~b.isna())
+            | (~a.isna() & ~b.isna() & (a != b))
+        )
+    
+    mask_changes = pd.DataFrame({
+        c: changed(df_before[c], df[c])
+        for c in cols
+    })
+    
+    df["Year"] = df["Year"].astype(str)
+    
+    modified = df.loc[mask_changes.any(axis=1), "Instrument"].unique()
+    
+    return(df, modified)
+
+history, modified = filter_jumps(history)
 
 history["Scope12"] = history["CO2 Equivalent Emissions Direct, Scope 1"] + history["CO2 Equivalent Emissions Indirect, Scope 2"]
-history["Scope123"] = history["CO2 Equivalent Emissions Direct, Scope 1"] + history["CO2 Equivalent Emissions Indirect, Scope 2"] + history["CO2 Equivalent Emissions Indirect, Scope 3"]
+history["Scope123"] = history["Scope12"] + history["CO2 Equivalent Emissions Indirect, Scope 3"]
+history['Scope12'] = pd.to_numeric(history['Scope12'], errors='coerce')
+history['Scope123'] = pd.to_numeric(history['Scope123'], errors='coerce')
 
-history.dropna(subset=["Financial Period Absolute"], inplace = True)
-history['Year'] = history['Financial Period Absolute'].str.extract(r'(\d+)').astype(int)
+history.to_excel("Data/history_processed.xlsx")
 
-history['GICS Sector Name'] = history.sort_values(['Instrument', 'Year']) \
-                           .groupby('Instrument')['GICS Sector Name'] \
-                           .ffill()
+emission_cols = ['CO2 Equivalent Emissions Direct, Scope 1',	'CO2 Equivalent Emissions Indirect, Scope 2', 'Scope12']
 
+keep_cols = ['GICS Sector Name'] + emission_cols
 
-history['GICS Sector Name'] = history['GICS Sector Name'].fillna("Unknown")
+last = history[history["Year"] == '2023'][keep_cols]
 
-def average_emissions(df, col = "Scope12", sector = 'GICS Sector Name', intensity = False):
+last = last.groupby('GICS Sector Name').sum().sort_values('Scope12', ascending = False)
 
-    sector_counts = df.groupby(sector)['Instrument'].nunique()
+grouped = (
+    history.groupby(["GICS Sector Name", "Year"])["Scope12"]
+    .sum()
+    .reset_index()
+)
 
+pivot = grouped.pivot(index="GICS Sector Name", columns="Year", values="Scope12")
 
-    renamed_sector = {s: f"{s} (n={sector_counts[s]})" for s in sector_counts.index}
-    
-    
-    df = df.copy()
-    df[sector] = df[sector].map(renamed_sector)
-    df = df.drop_duplicates(subset= ['Instrument', 'Scope12', 'CDPScope12', 'Year'])
+pivot = pivot.loc[:, [y for y in pivot.columns if int(y) <= 2023]]
 
-    avg_scope12_by_sector_year = df.groupby(['Year', sector])[col].mean().unstack()
-    sum_total_emissions_by_sector_year = df.groupby(['Year', sector])[col].sum(min_count=1).unstack()
+pivot.columns = pivot.columns.astype(str)
 
-    return avg_scope12_by_sector_year, sum_total_emissions_by_sector_year
+pivot = pivot.reindex(last.index)
 
-averaged, summed = average_emissions(history, col = "CDPScope12")
+pivot.index = last.index
 
-summed.T.to_excel("Data/history_sums.xlsx")
+pivot.to_excel("Data/history_sums.xlsx")
+
+last.to_excel("Data/history_last.xlsx")

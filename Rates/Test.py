@@ -382,7 +382,7 @@ def compare(simul):
     # Map from theoretical nu to optimized nu in theta
     nus_df.index = nus_df.index.map(mapping).map(theta_mapping)
     nus_df.sort_index(inplace = True)
-    nus_sector_order = nus_df["nus"].values[:-1]
+    nus_sector_order = nus_df["nus"].values
     sigmas_sector_order = nus_df["sigmas"].values
     
     theoretical_params = np.concatenate([np.array([central_std, beta]), nus_sector_order, sigmas_sector_order])
@@ -750,6 +750,7 @@ def verif_probas_plot(path = "Data/history_calib.xlsx", nopath = "Data/history_n
 
 #kl_df = final_calibration_effect()
 #kl_df = average_calibration_effect(mini = True)
-verif_probas_plot(path = "Data/Simul/Test3/Calib_4.xlsx", nopath = "Data/Simul/Test3/Nocalib_4.xlsx", scenar = "Fragmented World", title = "DelT (Calibration)", titleno = "DelT (No calibration)")
+
+#verif_probas_plot(path = "Data/Simul/Test3/Calib_4.xlsx", nopath = "Data/Simul/Test3/Nocalib_4.xlsx", scenar = "Fragmented World", title = "FW (Calibration)", titleno = "FW (No calibration)")
 
 

@@ -9,12 +9,12 @@ import pandas as pd
 
 CENTRAL_STD = 10
 BETA = 0.1
-NUS = np.array([2, -3, 1, -0.5, 1.5, -1.0, -1.5, 3.0, -1.0, -0.5])*1
-SIGMAS = 100 * np.ones(len(NUS))
+NUS = np.array([2, -3, 1, -0.5, 1.5, -1.0, -1.5, 3.0, -1.0, -0.5, 0])*1
+SIGMAS = 50 * np.ones(len(NUS))
 
 N_YEARS = 500
 FUTURE_START_YEAR = 2023
-START_YEAR = 2009
+START_YEAR = 2012
 
 MUS_CURPO = np.linspace(0, 500, N_YEARS)
 MUS_FW = np.linspace(0, 0, N_YEARS)
@@ -49,20 +49,17 @@ GICS = ['Communication Services', 'Consumer Discretionary', 'Consumer Staples',
 #EM_LAST = pd.DataFrame(EMI, index = GICS)
 
 HISTORY_EM = pd.read_excel("Data/history_sums.xlsx", index_col = 0)
-LAST_EM = pd.DataFrame(HISTORY_EM.loc[:,2022])
+LAST_EM = pd.read_excel("Data/history_last.xlsx", index_col = 0)
 
 DF_ORDER = LAST_EM.copy()
 DF_ORDER["Sector"] = DF_ORDER.index.str.replace(r"\s*\(n=\d+\)", "", regex=True)
-DF_ORDER = DF_ORDER[DF_ORDER["Sector"] != "Real Estate"]
+#DF_ORDER = DF_ORDER[DF_ORDER["Sector"] != "Real Estate"]
 
 # Historical rates ordered 
-HISTO_ORDER = DF_ORDER.sort_values(2022, ascending=False)["Sector"].tolist()
-
-#OLD_HISTO_ORDER = ['Materials','Consumer Discretionary','Utilities','Communication Services',
-# 'Industrials','Information Technology','Consumer Staples','Financials','Energy','Health Care']
+HISTO_ORDER = DF_ORDER.sort_values('Scope12', ascending=False)["Sector"].tolist()
 
 # Sort by descending order
-NUS_2 = np.array([2.5, -3, 1, 0, 1.5, -1.5, -2, 3.0, -1.0, -0.5])*1
+NUS_2 = np.array([2.5, -3, 1, 0, 1.5, -1.5, -2, 3.0, -1.0, -0.5, 0])*1
 NUS_FIXED = -np.sort(-NUS_2)
 NUS_ORDER = pd.DataFrame(NUS_FIXED, index = HISTO_ORDER, columns = ["Spreads"])
 
