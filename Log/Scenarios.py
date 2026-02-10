@@ -79,4 +79,9 @@ dlog = restricted.copy()
 dlog = dlog.drop(columns = "Sector")
 dlog[year_cols] = np.log(dlog[year_cols]).diff(axis=1)
 
-dlog.to_excel("Data/scenarios.xlsx")
+#dlog.to_excel("Data/scenarios.xlsx")
+
+scelog = dlog.drop(columns = "2020")
+scelog = scelog.set_index("Scenario")
+
+scelog.to_excel("Data/logscenarios.xlsx")
