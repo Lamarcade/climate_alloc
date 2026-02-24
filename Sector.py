@@ -165,3 +165,34 @@ plt.xticks(rotation=45, ha="right")
 plt.yticks(rotation=0)
 plt.tight_layout()
 plt.show()
+
+#%%
+
+sec_long = kyoto.melt(
+    id_vars=["Scenario", "Sector"],
+    value_vars=year_cols,
+    var_name="Year",
+    value_name="Emissions"
+)
+sec_long["Year"] = sec_long["Year"].astype(int)
+
+for scen in sec_long["Scenario"].unique():
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    sns.lineplot(
+        data=sec_long[sec_long["Scenario"] == scen].sort_values("Year"),
+        x="Year",
+        y="Emissions",
+        hue="Sector",
+        marker="o",
+        linewidth=2,
+        ax=ax
+    )
+    
+    ax.set_title(f"Emissions sectorielles projetées {scen}")
+    ax.set_xlabel("")
+    ax.set_ylabel("Emissions tCO2eq")
+    ax.legend(title="Sector", bbox_to_anchor=(1.02, 1), loc="upper left", borderaxespad=0)
+    sns.despine()
+    plt.tight_layout()
+    plt.show()

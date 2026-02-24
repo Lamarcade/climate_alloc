@@ -381,6 +381,126 @@ def plot_sector_paths_with_bands(df_mean, qs, title=None, q_low=0.05, q_high=0.9
     fig.tight_layout(rect=[0, 0, 1, 0.95])
     return fig
 
+#%% No isoperimeter
+
+def sector_returns_pairwise_matched(
+    df_long: pd.DataFrame,
+    value_col: str = "Scope12",    
+    year_col: str = "Year",
+    id_col: str = "Instrument",
+    sector_col: str = "GICS Sector Name",
+    years: list[int] | None = None,
+    require_all_sectors: bool = True,
+    min_overlap: int = 30
+) -> pd.DataFrame:
+    """
+    Construit r_t (année t) = log(sum_t) - log(sum_{t-1}) par secteur,
+    en isopérimètre "pairwise" (intersection des instruments entre t-1 et t).
+
+    Output: DataFrame index=year_to (int), columns=sectors (N)
+    """
+    df = df_long.copy()
+
+    df[id_col] = df[id_col].astype(str).str.strip()
+    df[sector_col] = df[sector_col].astype(str).str.strip()
+    df[year_col] = df[year_col].astype(int)
+
+    df = df[[year_col, id_col, sector_col, value_col]].dropna()
+    df = df[df[value_col] > 0]  # log
+
+    all_years = sorted(df[year_col].unique().tolist())
+    if years is None:
+        years = all_years
+    years = sorted([int(y) for y in years if int(y) in all_years])
+
+    sectors = sorted(df[sector_col].unique().tolist())
+    r_rows = []
+
+    for y in years:
+        y_prev = y - 1
+        if y_prev not in all_years:
+            continue
+
+        df0 = df[df[year_col] == y_prev].rename(columns={value_col: "e_prev"})
+        df1 = df[df[year_col] == y].rename(columns={value_col: "e_curr"})
+
+        # merge instrument + sector
+        m = df0.merge(df1, on=[id_col, sector_col], how="inner")
+
+        n_overlap = m[id_col].nunique()
+        if n_overlap < min_overlap:
+            continue
+
+        agg = (
+            m.groupby(sector_col)[["e_prev", "e_curr"]]
+             .sum()
+             .reindex(sectors)
+        )
+
+        # NaN if no instrument for sector
+        with np.errstate(divide="ignore", invalid="ignore"):
+            r = np.log(agg["e_curr"]) - np.log(agg["e_prev"])
+
+        r.name = y
+        r_rows.append(r)
+
+    r_df = pd.DataFrame(r_rows)
+    r_df.index = pd.Index(r_df.index.astype(int), name="year")
+
+    if require_all_sectors:
+        r_df = r_df.dropna(axis=0, how="any")
+
+    return r_df
+
+def sequential_recalibration_from_returns(
+    r_all: pd.DataFrame,                 # index=year, columns=sectors
+    scenarios_table: pd.DataFrame,
+    start_calib_year: int = 2020,
+    end_year: int | None = None,
+    cov_method: str = "oas",
+    dt: float = 1.0,
+    prior: dict | None = None
+):
+    r_all = r_all.copy()
+    r_all.index = pd.Index([int(y) for y in r_all.index], name="year")
+    all_years = sorted(r_all.index.tolist())
+    if end_year is None:
+        end_year = max(all_years)
+
+    update_years = [y for y in all_years if start_calib_year <= y <= end_year]
+
+    covs, corrs = {}, {}
+    vol_rows, probs_rows = [], []
+
+    for T in update_years:
+        r_T = r_all.loc[r_all.index <= T].dropna()
+
+        if r_T.shape[0] < 2:
+            out_probs = pd.DataFrame({"scenario": scenarios_table.index.astype(str)})
+            out_probs["log_score"] = 0.0
+            out_probs["probability"] = 1.0 / len(out_probs)
+            out_probs["years_used"] = 0
+            out_probs["year_min"] = np.nan
+            out_probs["year_max"] = np.nan
+        else:
+            S = shrink_cov(r_T.values, method=cov_method)
+            V = S / dt
+
+            V_df, vol_s, corr_df = cov_to_vol_corr(V, list(r_T.columns))
+            covs[T] = V_df
+            corrs[T] = corr_df
+            vol_rows.append(pd.Series(vol_s.values, index=vol_s.index, name=T))
+
+            out_probs = scenario_probabilities(r_T, V, scenarios_table, dt=dt, prior=prior)
+
+        out_probs = out_probs.copy()
+        out_probs.insert(0, "update_year", T)
+        probs_rows.append(out_probs)
+
+    probs_long = pd.concat(probs_rows, ignore_index=True)
+    vols_df = pd.DataFrame(vol_rows) if vol_rows else pd.DataFrame()
+    return probs_long, covs, corrs, vols_df
+
 #%% Application
 
 df = pd.read_excel("Data/history_filtered.xlsx")
@@ -390,29 +510,53 @@ df_E = coerce_index_to_year_int(df_E)
 scenarios_df = pd.read_excel("Data/logscenarios.xlsx")
 scen_table = prepare_scenarios_table(scenarios_df)
 
-# 1) sequential recalibration
-probs_long, covs, corrs, vols = sequential_recalibration(df_E, scen_table, start_calib_year=2020, cov_method="oas")
-
-# 2) take last available year T and simulate mixture
 T = int(df_E.index.max())
 e_T = df_E.loc[T]
-V_T = covs[T]
-probs_T = probs_long.loc[probs_long["update_year"] == T, ["scenario", "probability"]]
+years_future = [y for y in scen_table.columns if y >= 2024]
+
+# =============================================================================
+# # 1) sequential recalibration
+# probs_long, covs, corrs, vols = sequential_recalibration(df_E, scen_table, start_calib_year=2020, cov_method="oas")
+# 
+# # 2) take last available year T and simulate mixture
+# V_T = covs[T]
+# probs_T = probs_long.loc[probs_long["update_year"] == T, ["scenario", "probability"]]
+# probs = prepare_probabilities(probs_T)
+# 
+# sim = simulate_paths(e_T, V_T, scen_table, probs, years=years_future, n_sims=10000, seed=42)
+# 
+# df_mean, qs = summarize_paths(sim["paths"], sim["years"], sim["sectors"])
+# plot_sector_paths_with_bands(df_mean, qs, title="Trajectoires par secteur – mélange de scénarios")
+# plt.show()
+# 
+# tot_mean, tot_q = summarize_total(sim["paths"], sim["years"], q=(0.05, 0.95))
+# years = np.array([int(y) for y in tot_mean.index[1:]])
+# x = np.concatenate([[years[0]-1], years])
+# plt.figure(figsize=(10,5))
+# plt.fill_between(x, tot_q[0.05].values, tot_q[0.95].values, alpha=0.2)
+# plt.plot(x, tot_mean.values, linewidth=2)
+# plt.title("Total émissions – moyenne + q5/q95")
+# plt.xlabel("Année"); plt.ylabel("Émissions"); plt.grid(alpha=0.3)
+# plt.show()
+# =============================================================================
+
+# No isoperimeter
+df_proc = pd.read_excel("Data/history_processed.xlsx")
+
+r_long = sector_returns_pairwise_matched(
+    df_proc,
+    require_all_sectors=True,
+    min_overlap=50
+)
+
+r_long = r_long.loc[r_long.index <= 2023]
+
+probs_long, covs, corrs, vols = sequential_recalibration_from_returns(
+    r_long, scen_table, start_calib_year=2020, cov_method="oas"
+)
+
+V_T = covs[max(covs.keys())]
+probs_T = probs_long.loc[probs_long["update_year"] == max(covs.keys()), ["scenario", "probability"]]
 probs = prepare_probabilities(probs_T)
 
-years_future = [y for y in scen_table.columns if y >= 2024]
 sim = simulate_paths(e_T, V_T, scen_table, probs, years=years_future, n_sims=10000, seed=42)
-
-df_mean, qs = summarize_paths(sim["paths"], sim["years"], sim["sectors"])
-plot_sector_paths_with_bands(df_mean, qs, title="Trajectoires par secteur – mélange de scénarios")
-plt.show()
-
-tot_mean, tot_q = summarize_total(sim["paths"], sim["years"], q=(0.05, 0.95))
-years = np.array([int(y) for y in tot_mean.index[1:]])
-x = np.concatenate([[years[0]-1], years])
-plt.figure(figsize=(10,5))
-plt.fill_between(x, tot_q[0.05].values, tot_q[0.95].values, alpha=0.2)
-plt.plot(x, tot_mean.values, linewidth=2)
-plt.title("Total émissions – moyenne + q5/q95")
-plt.xlabel("Année"); plt.ylabel("Émissions"); plt.grid(alpha=0.3)
-plt.show()

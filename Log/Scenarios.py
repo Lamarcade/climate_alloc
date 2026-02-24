@@ -41,8 +41,7 @@ def reshape(df):
 
 sectors = reshape(filtered)
 
-def interpolate_years(df, start=2020, end=2050):
-    context_cols = ["Scenario", "Sector"]
+def interpolate_years(df, start=2020, end=2050, context_cols = ["Scenario", "Sector"]):
     
     year_cols = sorted([col for col in df.columns if col.isdigit() and start <= int(col) <= end])
     target_years = [str(y) for y in range(start, end + 1)]
@@ -84,4 +83,54 @@ dlog[year_cols] = np.log(dlog[year_cols]).diff(axis=1)
 scelog = dlog.drop(columns = "2020")
 scelog = scelog.set_index("Scenario")
 
-scelog.to_excel("Data/logscenarios.xlsx")
+#scelog.to_excel("Data/logscenarios.xlsx")
+
+#%%
+ngfs_costs = pd.read_csv("../Data/ngfs_cc.csv", index_col = "Scenario")
+ngfs_costs = ngfs_costs.dropna()
+
+y_cols = [col for col in ngfs_costs.columns if col.isdigit()]
+
+costs = ngfs_costs.copy()
+costs = costs.rename(index={"Below 2?C": "Below 2°C"})
+
+# $1 in 2010 is worth $1.44 in 2024 ??
+#costs[year_cols] *= 1.44
+
+costs = costs[y_cols]
+
+costs = costs.reset_index()
+costs = interpolate_years(costs, context_cols = "Scenario", start = 2025)
+
+#%%
+
+kyoto_corr = restricted.set_index("Scenario")
+kyoto_corr = kyoto_corr.loc[:,kyoto_corr.columns.isin(year_cols)]
+kyoto_corr = kyoto_corr.loc[:, kyoto_corr.columns >= "2025"]
+
+costs_corr = costs.set_index("Scenario")
+
+# Scenario-dependent correl
+k, c = kyoto_corr.align(costs_corr, join="inner", axis=None)
+
+corr_by_scenario = k.apply(lambda row: row.corr(c.loc[row.name]), axis=1)
+corr_by_scenario.name = "corr"
+corr_by_scenario
+
+# Correl by year
+
+corr_by_year = pd.Series(
+    {year: k[year].corr(c[year]) for year in k.columns},
+    name="corr"
+)
+corr_by_year
+
+#
+x = k.stack(dropna=True)   # MultiIndex (Scenario, Year)
+y = c.stack(dropna=True)
+
+xy = x.to_frame("kyoto").join(y.to_frame("costs"), how="inner")
+
+corr_global = xy["kyoto"].corr(xy["costs"], method="pearson")
+corr_global
+
